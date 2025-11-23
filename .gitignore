@@ -13,8 +13,9 @@ scripts_basedatos_relacional/
 # ====================
 # SECRETS Y CREDENCIALES
 # ====================
-# Archivos de configuración con credenciales
-*.toml
+# Archivos de configuración con credenciales (solo secrets, no config)
+secrets.toml
+**/secrets.toml
 .streamlit/secrets.toml
 streamlit_app/.streamlit/secrets.toml
 
