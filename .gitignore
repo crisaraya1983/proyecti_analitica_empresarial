@@ -1,0 +1,174 @@
+# ============================================================================
+# GITIGNORE - PROYECTO ANALÍTICA EMPRESARIAL
+# ============================================================================
+
+# ====================
+# CARPETAS DE DATOS
+# ====================
+# Excluir todos los archivos en carpetas de datos y scripts SQL
+Datos_BD_Relacional/
+Modelo_Dimensional/
+
+# ====================
+# SECRETS Y CREDENCIALES
+# ====================
+# Archivos de configuración con credenciales
+*.toml
+.streamlit/secrets.toml
+streamlit_app/.streamlit/secrets.toml
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# ====================
+# PYTHON
+# ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ====================
+# IDEs Y EDITORES
+# ====================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ====================
+# SISTEMA OPERATIVO
+# ====================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ====================
+# ARCHIVOS DE DATOS
+# ====================
+# Archivos CSV grandes
+*.csv
+# Excepciones: Permitir CSVs de configuración pequeños si es necesario
+# !config.csv
+
+# Archivos Excel
+*.xlsx
+*.xls
+
+# Archivos de base de datos
+*.db
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+*.bak
+
+# ====================
+# LOGS Y TEMPORALES
+# ====================
+# Logs
+*.log
+logs/
+*.log.*
+
+# Archivos temporales
+*.tmp
+*.temp
+*.cache
+.cache/
+
+# ====================
+# OTROS
+# ====================
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de respaldo
+*.bak
+*.backup
+~*

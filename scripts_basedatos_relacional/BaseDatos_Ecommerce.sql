@@ -197,3 +197,34 @@ CREATE TABLE eventos_web (
     FOREIGN KEY (producto_id) REFERENCES productos(producto_id),
     FOREIGN KEY (venta_id) REFERENCES ventas(venta_id)
 );
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[tiempo](
+	[ID_FECHA] [int] NOT NULL,
+	[FECHA_CAL] [date] NULL,
+	[DIA_CAL] [int] NULL,
+	[DIA_SEM_NUM] [int] NULL,
+	[DIA_SEM_ABRV] [nvarchar](3) NULL,
+	[DIA_SEM_NOMBRE] [nvarchar](15) NULL,
+	[MES_CAL] [int] NULL,
+	[MES_NOMBRE] [nvarchar](15) NULL,
+	[MES_CAL_ABRV] [nvarchar](3) NULL,
+	[MES_CAL_FECHA_INIC] [date] NULL,
+	[MES_CAL_FECHA_FIN] [date] NULL,
+	[ANO_CAL] [int] NULL,
+	[ANIO_CAL_FECHA_INIC] [date] NULL,
+	[ANIO_CAL_FECHA_FIN] [date] NULL,
+	[ANIO_MES_CAL_NUM] [nvarchar](7) NULL,
+	[ANIO_MES_CAL_DESCR] [nvarchar](15) NULL,
+	[TRIMESTRE] [int] NULL,
+	[SEM_CAL_NUM] [int] NULL,
+	[FECHA_INIC_SEM] [date] NULL,
+	[FECHA_FIN_SEM] [date] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[ID_FECHA] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO

@@ -1,0 +1,27 @@
+# ============================================================================
+# DEPENDENCIAS PYTHON - ECOMMERCE DATA WAREHOUSE
+# ============================================================================
+# Instalar con: pip install -r requirements.txt
+# ============================================================================
+
+# Streamlit - Framework web para dashboards
+streamlit>=1.28.0
+
+# Base de datos
+pyodbc>=4.0.39                  # Conexión a SQL Server
+
+# Análisis de datos
+pandas>=2.0.0                   # Manipulación de datos
+numpy>=1.24.0                   # Operaciones numéricas
+
+# Visualización
+plotly>=5.17.0                  # Gráficos interactivos
+matplotlib>=3.7.0               # Gráficos estáticos
+seaborn>=0.12.0                 # Gráficos estadísticos
+
+# Utilidades
+python-dateutil>=2.8.2          # Manejo de fechas
+pytz>=2023.3                    # Zonas horarias
+
+# Logging y debugging
+colorama>=0.4.6                 # Colores en consola (opcional)

@@ -1,0 +1,16 @@
+[theme]
+primaryColor="#2c5aa0"
+backgroundColor="#ffffff"
+secondaryBackgroundColor="#f8f9fa"
+textColor="#2d3748"
+font="sans serif"
+
+[client]
+showErrorDetails=true
+toolbarMode="viewer"
+
+[logger]
+level="info"
+
+[browser]
+gatherUsageStats=false
