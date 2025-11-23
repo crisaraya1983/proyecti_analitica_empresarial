@@ -8,6 +8,7 @@
 # Excluir todos los archivos en carpetas de datos y scripts SQL
 Datos_BD_Relacional/
 Modelo_Dimensional/
+scripts_basedatos_relacional/
 
 # ====================
 # SECRETS Y CREDENCIALES
