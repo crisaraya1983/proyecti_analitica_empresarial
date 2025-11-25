@@ -18,8 +18,9 @@ import pandas as pd
 project_root = os.path.dirname(os.path.dirname(__file__))
 etl_path = os.path.join(project_root, 'ETL')
 utils_path = os.path.join(project_root, 'utils')
+modulos_path = os.path.join(project_root, 'modulos')
 
-for path in [etl_path, utils_path]:
+for path in [etl_path, utils_path, modulos_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -27,6 +28,7 @@ for path in [etl_path, utils_path]:
 from ETL.etl_pipeline import ETLPipeline
 from ETL.etl_logger import ETLLogger
 from utils.db_connection import DatabaseConnection
+from modulos.componentes import inicializar_componentes, crear_seccion_encabezado
 
 # Configuración de la página
 st.set_page_config(
@@ -35,12 +37,20 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔄 ETL - Carga de Data Warehouse")
-st.markdown("---")
+# Inicializar componentes y estilos
+inicializar_componentes()
+
+# Título usando componente
+crear_seccion_encabezado(
+    "ETL - Carga de Data Warehouse",
+    "Proceso de extracción, transformación y carga desde OLTP hacia DW",
+    #badge="ETL",
+    badge_color="warning"
+)
 
 # Sidebar con información
 with st.sidebar:
-    st.header("ℹ️ Información del ETL")
+    st.header("Información del ETL")
     st.markdown("""
     **Proceso ETL** - Carga completa de datos desde OLTP hacia el Data Warehouse.
 
@@ -49,13 +59,13 @@ with st.sidebar:
     - Hechos (3 tablas)
     - Validación
 
-    **Duración:** ~10 minutos
+    **Duración estimada:** 10 minutos
     """)
 
     st.markdown("---")
 
-    st.subheader("⚙️ Conexiones")
-    test_conn = st.button("🔌 Probar Conexiones", use_container_width=True)
+    st.subheader("Conexiones")
+    test_conn = st.button("Probar Conexiones", use_container_width=True)
 
     if test_conn:
         with st.spinner("Probando conexiones..."):
@@ -63,20 +73,20 @@ with st.sidebar:
                 results = DatabaseConnection.test_all_connections(use_secrets=True)
 
                 if results["oltp"]["success"]:
-                    st.success("✅ OLTP conectado")
+                    st.success("OLTP conectado")
                 else:
-                    st.error(f"❌ OLTP: {results['oltp']['error']}")
+                    st.error(f"OLTP: {results['oltp']['error']}")
 
                 if results["dw"]["success"]:
-                    st.success("✅ DW conectado")
+                    st.success("DW conectado")
                 else:
-                    st.error(f"❌ DW: {results['dw']['error']}")
+                    st.error(f"DW: {results['dw']['error']}")
             except Exception as e:
                 st.error(f"Error probando conexiones: {str(e)}")
 
 
 # Tabs principales
-tab1, tab2, tab3 = st.tabs(["▶️ Ejecutar ETL", "📋 Historial", "📊 Métricas"])
+tab1, tab2, tab3 = st.tabs(["Ejecutar ETL", "Historial", "Métricas"])
 
 # ============================================================================
 # TAB 1: EJECUTAR ETL
