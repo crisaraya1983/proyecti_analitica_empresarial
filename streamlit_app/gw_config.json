@@ -1,0 +1,44 @@
+{
+  "version": "0.4.0",
+  "config": {
+    "defaultAggregated": true,
+    "defaultStack": false,
+    "geoms": ["auto", "bar", "line", "area", "scatter", "heatmap", "circle", "arc"],
+    "coordSystem": "generic",
+    "limit": -1
+  },
+  "encodings": {
+    "dimensions": [],
+    "measures": [],
+    "rows": [],
+    "columns": [],
+    "color": [],
+    "opacity": [],
+    "size": [],
+    "shape": [],
+    "radius": [],
+    "theta": [],
+    "longitude": [],
+    "latitude": [],
+    "details": [],
+    "filters": [],
+    "text": []
+  },
+  "layout": {
+    "showActions": true,
+    "showTableSummary": true,
+    "stack": "stack",
+    "interactiveScale": true,
+    "zeroScale": true,
+    "scaleIncludeUnmatchedChoropleth": false,
+    "showAllGeoms": false,
+    "coordSystem": "generic",
+    "sorted": "none",
+    "background": "transparent",
+    "size": {
+      "mode": "fixed",
+      "width": 1200,
+      "height": 600
+    }
+  }
+}

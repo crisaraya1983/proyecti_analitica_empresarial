@@ -54,10 +54,11 @@ crear_seccion_encabezado(
 # ============================================================================
 
 @st.cache_resource
-def get_dw_connection():
-    """Obtiene conexión al DW (cached)"""
+def get_dw_engine():
+    """Obtiene SQLAlchemy engine del DW (cached)"""
     try:
-        return DatabaseConnection.get_dw_connection(use_secrets=True)
+        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
+        return DatabaseConnection.get_dw_engine(use_secrets=True)
     except Exception as e:
         st.error(f"Error conectando al DW: {str(e)}")
         st.stop()
@@ -86,8 +87,8 @@ st.sidebar.info("""
 **Proyecciones**: Predice ventas futuras con series temporales
 """)
 
-# Obtener conexión
-conn = get_dw_connection()
+# Obtener engine
+engine = get_dw_engine()
 
 # ============================================================================
 # TAB 1: CLUSTERING - SEGMENTACIÓN DE CLIENTES
@@ -131,7 +132,7 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
 
             try:
                 # Inicializar modelo
-                segmentador = SegmentacionClientes(conn)
+                segmentador = SegmentacionClientes(engine)
 
                 # Extraer datos
                 st.write("### 📊 Paso 1: Extrayendo datos de clientes...")
@@ -415,7 +416,7 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
 
             try:
                 # Inicializar modelo
-                modelo_reg = ModeloRegresionVentas(conn)
+                modelo_reg = ModeloRegresionVentas(engine)
 
                 # Extraer datos
                 st.write("### 📊 Paso 1: Extrayendo datos de ventas...")
@@ -625,7 +626,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
             if aplicar_filtros:
                 # Obtener categorías
                 query_cat = "SELECT DISTINCT categoria FROM dim_producto ORDER BY categoria"
-                categorias = pd.read_sql(query_cat, conn)['categoria'].tolist()
+                categorias = pd.read_sql(query_cat, engine)['categoria'].tolist()
 
                 filtro_cat = st.selectbox("Categoría", ["Todas"] + categorias)
                 if filtro_cat != "Todas":
@@ -637,7 +638,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
 
             try:
                 # Inicializar modelo
-                modelo_proyeccion = ModeloProyeccionVentas(conn)
+                modelo_proyeccion = ModeloProyeccionVentas(engine)
 
                 # Extraer serie temporal
                 st.write("### 📊 Paso 1: Extrayendo serie temporal...")

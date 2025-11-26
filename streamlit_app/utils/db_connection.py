@@ -11,8 +11,11 @@ Propósito: Proporcionar funciones centralizadas para conectar a SQL Server
 
 import pyodbc
 import streamlit as st
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 import logging
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +156,152 @@ class DatabaseConnection:
         return DatabaseConnection.get_connection(
             DatabaseConnection.DW_DATABASE,
             use_secrets
+        )
+
+    @staticmethod
+    def get_sqlalchemy_connection_string(database: str, use_secrets: bool = True) -> str:
+        """
+        Obtiene el connection string formateado para SQLAlchemy
+
+        Args:
+            database: Nombre de la base de datos
+            use_secrets: Si True, intenta usar Streamlit secrets
+
+        Returns:
+            Connection string formateado para SQLAlchemy
+
+        Examples:
+            >>> conn_str = DatabaseConnection.get_sqlalchemy_connection_string("Ecommerce_OLTP")
+            >>> engine = create_engine(conn_str)
+        """
+        if use_secrets:
+            try:
+                server = st.secrets["sqlserver"]["server"]
+                driver = st.secrets["sqlserver"]["driver"]
+                trusted_connection = st.secrets["sqlserver"]["trusted_connection"]
+
+                # Codificar el driver para URL
+                driver_encoded = quote_plus(driver)
+
+                # Formato de connection string para SQLAlchemy con Windows Authentication
+                conn_str = (
+                    f"mssql+pyodbc://@{server}/{database}?"
+                    f"driver={driver_encoded}&"
+                    f"Trusted_Connection={trusted_connection}"
+                )
+
+                logger.info(f"Usando SQLAlchemy connection string desde secrets para {database}")
+                return conn_str
+
+            except (KeyError, FileNotFoundError, AttributeError) as e:
+                logger.warning(f"No se pudo leer secrets.toml: {e}. Usando configuración por defecto.")
+                return DatabaseConnection._get_default_sqlalchemy_connection_string(database)
+        else:
+            return DatabaseConnection._get_default_sqlalchemy_connection_string(database)
+
+    @staticmethod
+    def _get_default_sqlalchemy_connection_string(database: str) -> str:
+        """
+        Configuración por defecto para SQLAlchemy en desarrollo local
+
+        Args:
+            database: Nombre de la base de datos
+
+        Returns:
+            Connection string SQLAlchemy por defecto
+        """
+        driver_encoded = quote_plus("ODBC Driver 17 for SQL Server")
+        return (
+            f"mssql+pyodbc://@CRISTIANDELL/{database}?"
+            f"driver={driver_encoded}&"
+            f"Trusted_Connection=yes"
+        )
+
+    @staticmethod
+    def get_sqlalchemy_engine(database: str, use_secrets: bool = True, **engine_kwargs) -> Engine:
+        """
+        Obtiene un SQLAlchemy engine para la base de datos especificada
+
+        Este método es preferido para uso con pandas para evitar warnings.
+
+        Args:
+            database: Nombre de la base de datos
+            use_secrets: Si True, usa Streamlit secrets
+            **engine_kwargs: Argumentos adicionales para create_engine (ej. pool_size, max_overflow)
+
+        Returns:
+            SQLAlchemy Engine
+
+        Raises:
+            Exception: Si no se puede crear el engine
+
+        Examples:
+            >>> engine = DatabaseConnection.get_sqlalchemy_engine("Ecommerce_OLTP")
+            >>> df = pd.read_sql("SELECT * FROM productos", engine)
+            >>> # No necesitas cerrar el engine, se maneja automáticamente
+        """
+        conn_str = DatabaseConnection.get_sqlalchemy_connection_string(database, use_secrets)
+
+        # Configuración por defecto para el engine
+        default_kwargs = {
+            'pool_pre_ping': True,  # Verifica conexiones antes de usarlas
+            'pool_recycle': 3600,   # Recicla conexiones cada hora
+            'echo': False           # No mostrar SQL queries en logs
+        }
+
+        # Combinar con kwargs personalizados
+        default_kwargs.update(engine_kwargs)
+
+        try:
+            engine = create_engine(conn_str, **default_kwargs)
+            logger.info(f"SQLAlchemy engine creado exitosamente para {database}")
+            return engine
+        except Exception as e:
+            logger.error(f"Error creando SQLAlchemy engine para {database}: {str(e)}")
+            raise
+
+    @staticmethod
+    def get_oltp_engine(use_secrets: bool = True, **engine_kwargs) -> Engine:
+        """
+        Obtiene SQLAlchemy engine para la base de datos OLTP (Ecommerce_OLTP)
+
+        Args:
+            use_secrets: Si True, usa Streamlit secrets
+            **engine_kwargs: Argumentos adicionales para create_engine
+
+        Returns:
+            SQLAlchemy Engine para Ecommerce_OLTP
+
+        Examples:
+            >>> engine = DatabaseConnection.get_oltp_engine()
+            >>> df = pd.read_sql_query("SELECT * FROM productos", engine)
+        """
+        return DatabaseConnection.get_sqlalchemy_engine(
+            DatabaseConnection.OLTP_DATABASE,
+            use_secrets,
+            **engine_kwargs
+        )
+
+    @staticmethod
+    def get_dw_engine(use_secrets: bool = True, **engine_kwargs) -> Engine:
+        """
+        Obtiene SQLAlchemy engine para la base de datos DW (Ecommerce_DW)
+
+        Args:
+            use_secrets: Si True, usa Streamlit secrets
+            **engine_kwargs: Argumentos adicionales para create_engine
+
+        Returns:
+            SQLAlchemy Engine para Ecommerce_DW
+
+        Examples:
+            >>> engine = DatabaseConnection.get_dw_engine()
+            >>> df = pd.read_sql_query("SELECT * FROM fact_ventas", engine)
+        """
+        return DatabaseConnection.get_sqlalchemy_engine(
+            DatabaseConnection.DW_DATABASE,
+            use_secrets,
+            **engine_kwargs
         )
 
     @staticmethod
@@ -339,3 +488,39 @@ def test_connections(use_secrets: bool = True) -> Dict[str, Dict[str, any]]:
         >>> print(results)
     """
     return DatabaseConnection.test_all_connections(use_secrets)
+
+
+# ============================================================================
+# FUNCIONES DE CONVENIENCIA PARA SQLALCHEMY (RECOMENDADO PARA PANDAS)
+# ============================================================================
+
+def get_oltp_engine(use_secrets: bool = True, **engine_kwargs) -> Engine:
+    """
+    Función de conveniencia para obtener SQLAlchemy engine de OLTP
+
+    Usar esta función en lugar de get_oltp_connection() cuando uses pandas
+    para evitar el warning de SQLAlchemy.
+
+    Examples:
+        >>> from utils.db_connection import get_oltp_engine
+        >>> import pandas as pd
+        >>> engine = get_oltp_engine()
+        >>> df = pd.read_sql("SELECT * FROM productos", engine)
+    """
+    return DatabaseConnection.get_oltp_engine(use_secrets, **engine_kwargs)
+
+
+def get_dw_engine(use_secrets: bool = True, **engine_kwargs) -> Engine:
+    """
+    Función de conveniencia para obtener SQLAlchemy engine de DW
+
+    Usar esta función en lugar de get_dw_connection() cuando uses pandas
+    para evitar el warning de SQLAlchemy.
+
+    Examples:
+        >>> from utils.db_connection import get_dw_engine
+        >>> import pandas as pd
+        >>> engine = get_dw_engine()
+        >>> df = pd.read_sql("SELECT * FROM fact_ventas", engine)
+    """
+    return DatabaseConnection.get_dw_engine(use_secrets, **engine_kwargs)

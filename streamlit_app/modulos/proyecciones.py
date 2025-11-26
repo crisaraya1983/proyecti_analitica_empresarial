@@ -17,8 +17,10 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolu
 import joblib
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Union
 import warnings
+import pyodbc
+from sqlalchemy.engine import Engine
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
@@ -30,12 +32,13 @@ class ModeloProyeccionVentas:
     Implementa ARIMA y Exponential Smoothing
     """
 
-    def __init__(self, conn):
+    def __init__(self, conn: Union[pyodbc.Connection, Engine]):
         """
         Inicializa el modelo de proyección
 
         Args:
-            conn: Conexión a la base de datos DW
+            conn: Conexión pyodbc o SQLAlchemy Engine a la base de datos DW.
+                  Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
         """
         self.conn = conn
         self.modelo = None

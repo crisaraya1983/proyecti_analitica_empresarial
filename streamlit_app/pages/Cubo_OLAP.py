@@ -52,8 +52,9 @@ crear_seccion_encabezado(
 def get_olap_cube():
     """Obtiene instancia del cubo OLAP (cached)"""
     try:
-        conn = DatabaseConnection.get_dw_connection(use_secrets=True)
-        return CuboOLAP(conn)
+        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
+        engine = DatabaseConnection.get_dw_engine(use_secrets=True)
+        return CuboOLAP(engine)
     except Exception as e:
         st.error(f"Error conectando al DW: {str(e)}")
         st.stop()

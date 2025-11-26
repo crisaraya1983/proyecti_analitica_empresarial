@@ -8,9 +8,10 @@ Nombres de columnas correctos según estructura real del DW
 
 import pyodbc
 import pandas as pd
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Union
 import logging
 from datetime import datetime
+from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,14 @@ class CuboOLAP:
     Con nombres de columnas corregidos según estructura real
     """
 
-    def __init__(self, connection: pyodbc.Connection):
-        """Inicializa el cubo OLAP"""
+    def __init__(self, connection: Union[pyodbc.Connection, Engine]):
+        """
+        Inicializa el cubo OLAP
+
+        Args:
+            connection: Puede ser una conexión pyodbc o un SQLAlchemy Engine.
+                       Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
+        """
         self.conn = connection
         self.cache = {}
         logger.info("CuboOLAP inicializado")
