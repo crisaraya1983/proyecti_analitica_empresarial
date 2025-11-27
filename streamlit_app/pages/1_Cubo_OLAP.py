@@ -36,6 +36,8 @@ st.set_page_config(
 # Inicializar componentes y estilos
 inicializar_componentes()
 
+st.title("Ecommerce Cenfotec")
+
 # Título usando componente
 crear_seccion_encabezado(
     "Cubo OLAP - Análisis Multidimensional",

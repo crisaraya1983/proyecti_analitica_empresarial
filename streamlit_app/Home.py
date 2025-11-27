@@ -13,7 +13,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Configurar paths
 project_root = os.path.dirname(__file__)
@@ -34,13 +34,13 @@ st.set_page_config(
     page_title="Dashboard Ejecutivo - E-commerce Analytics",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Inicializar componentes y estilos
 inicializar_componentes()
 
-st.title("Ecommerce")
+st.title("Ecommerce Cenfotec Analytics")
 
 # Estilos adicionales para el dashboard
 st.markdown("""
@@ -56,30 +56,12 @@ st.markdown("""
         font-size: 1em;
     }
 
-    /* Tarjetas de KPI */
-    .kpi-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-
     /* Secciones del BSC */
     .bsc-section {
         background: #f8f9fa;
         padding: 15px;
         border-radius: 8px;
         border-left: 5px solid #2c5aa0;
-        margin-bottom: 20px;
-    }
-
-    /* Filtros */
-    .filter-container {
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }
 </style>
@@ -93,156 +75,79 @@ st.markdown("""
 def get_dw_engine():
     """Obtiene SQLAlchemy engine del DW (cached)"""
     try:
-        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
         return DatabaseConnection.get_dw_engine(use_secrets=True)
     except Exception as e:
         st.error(f"Error conectando al DW: {str(e)}")
         st.stop()
 
-@st.cache_data(ttl=600)
-def obtener_opciones_filtros(_conn):
-    """Obtiene opciones para filtros (cached 10min)"""
-    categorias = pd.read_sql("SELECT DISTINCT categoria FROM dim_producto ORDER BY categoria", _conn)
-    provincias = pd.read_sql("SELECT DISTINCT provincia FROM dim_geografia ORDER BY provincia", _conn)
-
-    return {
-        'categorias': ['Todas'] + categorias['categoria'].tolist(),
-        'provincias': ['Todas'] + provincias['provincia'].tolist()
-    }
-
 # ============================================================================
 # INICIALIZACIÓN
 # ============================================================================
 
-# Inicializar session_state para filtros
-if 'fecha_inicio' not in st.session_state:
-    # Por defecto: últimos 3 meses
-    st.session_state.fecha_inicio = (datetime.now() - timedelta(days=90)).date()
-    st.session_state.fecha_fin = datetime.now().date()
-    st.session_state.categoria_filtro = 'Todas'
-    st.session_state.provincia_filtro = 'Todas'
-
-# Obtener engine
 engine = get_dw_engine()
 kpi_calc = KPICalculator(engine)
 
-# Obtener opciones para filtros
-opciones_filtros = obtener_opciones_filtros(engine)
-
 # ============================================================================
-# HEADER Y FILTROS
+# SECCIÓN 1: KPIs PRINCIPALES (6 MÉTRICAS)
 # ============================================================================
 
-# Header principal
-crear_seccion_encabezado(
-    "Dashboard Ejecutivo",
-    "Balanced Scorecard y KPIs Principales del Negocio",
-    #badge="EJECUTIVO",
-    badge_color="primary"
-)
-
-# ============================================================================
-# SIDEBAR - FILTROS GLOBALES
-# ============================================================================
-
-st.sidebar.title("🔍 Filtros Globales")
-
-with st.sidebar.expander("📅 Rango de Fechas", expanded=True):
-    fecha_inicio = st.date_input(
-        "Fecha inicio",
-        value=st.session_state.fecha_inicio,
-        key="date_inicio_input"
-    )
-
-    fecha_fin = st.date_input(
-        "Fecha fin",
-        value=st.session_state.fecha_fin,
-        key="date_fin_input"
-    )
-
-with st.sidebar.expander("🏷️ Filtros Dimensionales", expanded=True):
-    categoria_filtro = st.selectbox(
-        "Categoría",
-        opciones_filtros['categorias'],
-        index=opciones_filtros['categorias'].index(st.session_state.categoria_filtro)
-    )
-
-    provincia_filtro = st.selectbox(
-        "Provincia",
-        opciones_filtros['provincias'],
-        index=opciones_filtros['provincias'].index(st.session_state.provincia_filtro)
-    )
-
-# Botón para aplicar filtros
-if st.sidebar.button("🔄 Aplicar Filtros", use_container_width=True, type="primary"):
-    st.session_state.fecha_inicio = fecha_inicio
-    st.session_state.fecha_fin = fecha_fin
-    st.session_state.categoria_filtro = categoria_filtro
-    st.session_state.provincia_filtro = provincia_filtro
-    st.cache_data.clear()
-    st.rerun()
-
-# Mostrar filtros activos
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Filtros Activos")
-st.sidebar.info(f"""
-**Periodo:** {st.session_state.fecha_inicio.strftime('%Y-%m-%d')} a {st.session_state.fecha_fin.strftime('%Y-%m-%d')}
-**Categoría:** {st.session_state.categoria_filtro}
-**Provincia:** {st.session_state.provincia_filtro}
-""")
-
-# Preparar filtros para queries
-filtros = {}
-if st.session_state.categoria_filtro != 'Todas':
-    filtros['categoria'] = st.session_state.categoria_filtro
-if st.session_state.provincia_filtro != 'Todas':
-    filtros['provincia'] = st.session_state.provincia_filtro
-
-fecha_inicio_str = st.session_state.fecha_inicio.strftime('%Y-%m-%d')
-fecha_fin_str = st.session_state.fecha_fin.strftime('%Y-%m-%d')
-
-# ============================================================================
-# SECCIÓN 1: KPIs PRINCIPALES (MÉTRICAS DESTACADAS)
-# ============================================================================
-
-st.markdown("## 📊 KPIs Principales")
+st.markdown("## KPIs Principales - 2025 (Hasta Octubre)")
 
 with st.spinner("Cargando KPIs principales..."):
-    # Calcular KPIs principales
-    ventas_data = kpi_calc.calcular_ventas_totales(fecha_inicio_str, fecha_fin_str, filtros)
-    margen_data = kpi_calc.calcular_margen_ganancia(fecha_inicio_str, fecha_fin_str, filtros)
-    clientes_data = kpi_calc.calcular_clientes_activos(fecha_inicio_str, fecha_fin_str, filtros)
+    kpis_2025 = kpi_calc.calcular_kpis_principales_2025(mes_hasta=10)
 
-    # Mostrar métricas en 4 columnas
-    col1, col2, col3, col4 = st.columns(4)
+    # Primera fila: 3 KPIs principales
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.metric(
-            "💰 Ventas Totales",
-            f"₡{ventas_data['ventas_totales']:,.0f}",
-            f"{ventas_data['variacion_porcentaje']:.1f}% vs periodo anterior",
+            "💰 Ventas Totales 2025",
+            f"₡{kpis_2025['ventas_totales_2025']:,.0f}",
+            f"{kpis_2025['ventas_variacion']:+.1f}% vs 2024",
             delta_color="normal"
         )
 
     with col2:
         st.metric(
-            "📈 Margen de Ganancia",
-            f"{margen_data['margen_porcentaje']:.1f}%",
-            f"₡{margen_data['margen_total']:,.0f}"
+            "📈 Margen de Ganancia 2025",
+            f"{kpis_2025['margen_porcentaje_2025']:.1f}%",
+            f"{kpis_2025['margen_variacion']:+.1f}% vs 2024",
+            delta_color="normal",
+            help=f"Margen total: ₡{kpis_2025['margen_total_2025']:,.0f}"
         )
 
     with col3:
         st.metric(
-            "🛒 Ticket Promedio",
-            f"₡{ventas_data['ticket_promedio']:,.0f}",
-            f"{ventas_data['num_transacciones']:,} transacciones"
+            "🛒 Ticket Promedio 2025",
+            f"₡{kpis_2025['ticket_promedio_2025']:,.0f}",
+            f"{kpis_2025['ticket_variacion']:+.1f}% vs 2024",
+            delta_color="normal"
         )
+
+    # Segunda fila: 3 KPIs operacionales
+    col4, col5, col6 = st.columns(3)
 
     with col4:
         st.metric(
-            "👥 Clientes Activos",
-            f"{clientes_data['clientes_activos']:,}",
-            f"{clientes_data['variacion_porcentaje']:.1f}% vs periodo anterior",
+            "✅ Tasa Ventas Completadas",
+            f"{kpis_2025['tasa_completadas_2025']:.1f}%",
+            f"{kpis_2025['ventas_completadas_variacion']:+.1f}pp vs 2024",
+            delta_color="normal"
+        )
+
+    with col5:
+        st.metric(
+            "❌ Tasa Ventas Canceladas",
+            f"{kpis_2025['tasa_canceladas_2025']:.1f}%",
+            f"{kpis_2025['ventas_canceladas_variacion']:+.1f}pp vs 2024",
+            delta_color="inverse"
+        )
+
+    with col6:
+        st.metric(
+            "📦 Promedio Productos/Venta",
+            f"{kpis_2025['promedio_productos_2025']:.1f}",
+            f"{kpis_2025['promedio_productos_variacion']:+.1f}% vs 2024",
             delta_color="normal"
         )
 
@@ -266,114 +171,117 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # Gráfico de crecimiento de ventas
+    # Gráfico de margen con línea de meta (39%)
     df_crecimiento = kpi_calc.calcular_crecimiento_ventas('mes')
 
     if not df_crecimiento.empty:
-        # Crear etiqueta de periodo
-        if 'MES_CAL' in df_crecimiento.columns:
-            df_crecimiento['periodo'] = df_crecimiento['ANIO_CAL'].astype(str) + '-' + df_crecimiento['MES_CAL'].astype(str).str.zfill(2)
+        # Filtrar 2023-2025 (hasta octubre 2025)
+        df_filtrado = df_crecimiento[
+            (df_crecimiento['ANIO_CAL'] < 2025) |
+            ((df_crecimiento['ANIO_CAL'] == 2025) & (df_crecimiento['MES_CAL'] <= 10))
+        ].copy()
 
-        fig_crecimiento = go.Figure()
+        if not df_filtrado.empty:
+            # Calcular margen porcentual
+            df_filtrado['margen_porcentaje'] = (df_filtrado['margen'] / df_filtrado['ventas'] * 100).fillna(0)
+            df_filtrado['periodo'] = df_filtrado['ANIO_CAL'].astype(str) + '-' + df_filtrado['MES_CAL'].astype(str).str.zfill(2)
 
-        fig_crecimiento.add_trace(go.Scatter(
-            x=df_crecimiento['periodo'],
-            y=df_crecimiento['ventas'],
-            mode='lines+markers',
-            name='Ventas',
-            line=dict(color=COLORES[0], width=3),
-            fill='tozeroy',
-            fillcolor=f'rgba({int(COLORES[0][1:3], 16)}, {int(COLORES[0][3:5], 16)}, {int(COLORES[0][5:7], 16)}, 0.1)'
-        ))
+            fig_margen = go.Figure()
 
-        fig_crecimiento.update_layout(
-            title="Tendencia de Ventas Mensuales",
-            xaxis_title="Periodo",
-            yaxis_title="Ventas (₡)",
+            # Línea de margen real
+            fig_margen.add_trace(go.Scatter(
+                x=df_filtrado['periodo'],
+                y=df_filtrado['margen_porcentaje'],
+                mode='lines+markers',
+                name='Margen Real',
+                line=dict(color=COLORES[0], width=3),
+                marker=dict(size=6)
+            ))
+
+            # Línea de meta al 39%
+            fig_margen.add_trace(go.Scatter(
+                x=df_filtrado['periodo'],
+                y=[39] * len(df_filtrado),
+                mode='lines',
+                name='Meta (39%)',
+                line=dict(color='red', width=2, dash='dash')
+            ))
+
+            fig_margen.update_layout(
+                title='Margen de Ganancia (%) - Meta: 39%',
+                xaxis_title='Periodo',
+                yaxis_title='Margen (%)',
+                height=300,
+                margin=dict(l=20, r=20, t=40, b=20),
+                hovermode='x unified'
+            )
+
+            st.plotly_chart(fig_margen, use_container_width=True)
+
+    # Ventas por Categoría a través del Tiempo (Stacked Bar 100%)
+    df_ventas_categoria = kpi_calc.calcular_ventas_por_categoria_tiempo()
+
+    if not df_ventas_categoria.empty:
+        # Pivotar datos para gráfico de barras apiladas
+        df_pivot = df_ventas_categoria.pivot(index='periodo', columns='categoria', values='ventas').fillna(0)
+
+        # Crear gráfico de barras apiladas al 100%
+        fig_ventas_cat = go.Figure()
+
+        for categoria in df_pivot.columns:
+            fig_ventas_cat.add_trace(go.Bar(
+                name=categoria,
+                x=df_pivot.index,
+                y=df_pivot[categoria],
+                hovertemplate='<b>%{fullData.name}</b><br>' +
+                             'Periodo: %{x}<br>' +
+                             'Ventas: ₡%{y:,.0f}<br>' +
+                             '<extra></extra>'
+            ))
+
+        fig_ventas_cat.update_layout(
+            title='Distribución de Ventas por Categoría (2023 - Oct 2025)',
+            xaxis_title='Periodo',
+            yaxis_title='Porcentaje de Ventas (%)',
+            barmode='stack',
+            barnorm='percent',  # Normaliza al 100%
             height=300,
-            margin=dict(l=20, r=20, t=40, b=20)
+            margin=dict(l=20, r=20, t=40, b=20),
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.02,
+                font=dict(size=9)
+            ),
+            hovermode='x unified'
         )
 
-        st.plotly_chart(fig_crecimiento, use_container_width=True)
+        st.plotly_chart(fig_ventas_cat, use_container_width=True)
 
-    # Métricas adicionales
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        st.metric("Crecimiento Promedio", f"{df_crecimiento['crecimiento_porcentaje'].mean():.1f}%")
-    with col_f2:
-        ultimo_crecimiento = df_crecimiento['crecimiento_porcentaje'].iloc[-1] if len(df_crecimiento) > 0 else 0
-        st.metric("Último Periodo", f"{ultimo_crecimiento:.1f}%")
+    # Métricas adicionales debajo del gráfico stack
+    col_m1, col_m2 = st.columns(2)
 
-# ====== PERSPECTIVA DE CLIENTES ======
-with col_right:
-    st.markdown("""
-    <div class="bsc-section">
-        <h3 style="color: #2c5aa0; margin-top: 0;">👥 Perspectiva de Clientes</h3>
-        <p style="color: #718096; font-size: 0.9em;">Satisfacción y retención de clientes</p>
-    </div>
-    """, unsafe_allow_html=True)
+    with col_m1:
+        # Producto más vendido
+        producto_top = kpi_calc.calcular_producto_mas_vendido()
+        if producto_top and producto_top.get('producto_nombre') != 'N/A':
+            st.metric(
+                "🏆 Producto Más Vendido",
+                producto_top['producto_nombre'][:25] + "...",
+                f"{producto_top['cantidad_vendida']:,} unidades"
+            )
 
-    # Métricas de clientes
-    retencion_data = kpi_calc.calcular_tasa_retencion(meses=3)
-    frecuencia_data = kpi_calc.calcular_frecuencia_compra(fecha_inicio_str, fecha_fin_str)
-
-    # Gráfico de dona: Clientes nuevos vs retenidos
-    fig_clientes = go.Figure(data=[go.Pie(
-        labels=['Clientes Nuevos', 'Clientes Retenidos'],
-        values=[clientes_data['clientes_nuevos'],
-                clientes_data['clientes_activos'] - clientes_data['clientes_nuevos']],
-        hole=0.5,
-        marker_colors=[COLORES[3], COLORES[1]]
-    )])
-
-    fig_clientes.update_layout(
-        title="Distribución de Clientes",
-        height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
-        showlegend=True
-    )
-
-    st.plotly_chart(fig_clientes, use_container_width=True)
-
-    # Métricas adicionales
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        st.metric("Tasa de Retención", f"{retencion_data['tasa_retencion']:.1f}%")
-    with col_c2:
-        st.metric("Frecuencia Promedio", f"{frecuencia_data['frecuencia_promedio']:.1f} compras")
-
-# ====== PERSPECTIVA DE PROCESOS INTERNOS ======
-with col_left:
-    st.markdown("""
-    <div class="bsc-section">
-        <h3 style="color: #2c5aa0; margin-top: 0;">⚙️ Perspectiva de Procesos</h3>
-        <p style="color: #718096; font-size: 0.9em;">Eficiencia operativa y conversión</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Funnel de conversión
-    df_funnel = kpi_calc.calcular_funnel_conversion(fecha_inicio_str, fecha_fin_str)
-
-    if not df_funnel.empty:
-        fig_funnel = go.Figure(go.Funnel(
-            y=df_funnel['etapa'],
-            x=df_funnel['cantidad'],
-            textposition="inside",
-            textinfo="value+percent initial",
-            marker=dict(color=COLORES[:len(df_funnel)])
-        ))
-
-        fig_funnel.update_layout(
-            title="Funnel de Conversión",
-            height=350,
-            margin=dict(l=20, r=20, t=40, b=20)
-        )
-
-        st.plotly_chart(fig_funnel, use_container_width=True)
-
-    # Tasa de conversión
-    conversion_data = kpi_calc.calcular_tasa_conversion(fecha_inicio_str, fecha_fin_str)
-    st.metric("Tasa de Conversión Global", f"{conversion_data['tasa_conversion']:.2f}%")
+    with col_m2:
+        # Producto con mayor margen
+        producto_margen = kpi_calc.calcular_producto_mayor_margen()
+        if producto_margen and producto_margen.get('producto_nombre') != 'N/A':
+            st.metric(
+                "💎 Mayor Margen Total",
+                producto_margen['producto_nombre'][:25] + "...",
+                f"₡{producto_margen['margen_total']:,.0f}"
+            )
 
 # ====== PERSPECTIVA DE PRODUCTOS ======
 with col_right:
@@ -385,271 +293,242 @@ with col_right:
     """, unsafe_allow_html=True)
 
     # Categorías con mayor margen
-    df_categorias = kpi_calc.calcular_categorias_mayor_margen(fecha_inicio_str, fecha_fin_str, filtros)
+    df_categorias_margen = kpi_calc.calcular_categorias_mayor_margen()
 
-    if not df_categorias.empty:
+    if not df_categorias_margen.empty:
+        # Tomar solo top 8 categorías
+        df_top_categorias = df_categorias_margen.head(8)
+
         fig_categorias = px.bar(
-            df_categorias.head(8),
+            df_top_categorias,
             x='margen_porcentaje',
             y='categoria',
             orientation='h',
-            title='Top Categorías por Margen (%)',
+            title='Top 8 Categorías por Margen (%)',
             color='margen_porcentaje',
             color_continuous_scale='Blues',
             labels={'margen_porcentaje': 'Margen %', 'categoria': 'Categoría'}
         )
 
         fig_categorias.update_layout(
-            height=350,
+            height=600,
             margin=dict(l=20, r=20, t=40, b=20),
             showlegend=False
         )
 
         st.plotly_chart(fig_categorias, use_container_width=True)
 
+# Divider entre las dos filas del Balanced Scorecard
 st.markdown("---")
 
-# ============================================================================
-# SECCIÓN 3: ANÁLISIS DETALLADO
-# ============================================================================
+# ====== PERSPECTIVA DE CLIENTES ======
+with col_left:
+    st.markdown("""
+    <div class="bsc-section">
+        <h3 style="color: #2c5aa0; margin-top: 0;">👥 Perspectiva de Clientes</h3>
+        <p style="color: #718096; font-size: 0.9em;">Satisfacción y retención de clientes</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown("## 📈 Análisis Detallado")
+    # Clientes activos por mes (2025)
+    df_clientes_mes = kpi_calc.calcular_clientes_activos_por_mes()
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🌍 Ventas por Región",
-    "🏆 Top Productos",
-    "🌐 Comportamiento Web",
-    "🔍 Búsquedas vs Ventas"
-])
+    if not df_clientes_mes.empty:
+        # Filtrar solo 2025 hasta octubre
+        df_clientes_2025 = df_clientes_mes[
+            (df_clientes_mes['ANIO_CAL'] == 2025) & (df_clientes_mes['MES_CAL'] <= 10)
+        ].copy()
 
-# ====== TAB 1: VENTAS POR REGIÓN ======
-with tab1:
-    st.markdown("### Distribución Geográfica de Ventas")
+        if not df_clientes_2025.empty:
+            df_clientes_2025['periodo'] = df_clientes_2025['MES_CAL'].astype(str).str.zfill(2)
 
-    # Query para ventas por provincia
-    query_provincias = f"""
-        SELECT
-            g.provincia,
-            SUM(fv.monto_total) AS ventas_totales,
-            COUNT(DISTINCT fv.venta_id) AS num_transacciones,
-            COUNT(DISTINCT fv.cliente_id) AS num_clientes
-        FROM fact_ventas fv
-        INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-        INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-            AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-        INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-        WHERE fv.venta_cancelada = 0
-          AND t.FECHA_CAL >= '{fecha_inicio_str}'
-          AND t.FECHA_CAL <= '{fecha_fin_str}'
-          {f"AND p.categoria = '{filtros['categoria']}'" if 'categoria' in filtros else ''}
-        GROUP BY g.provincia
-        ORDER BY ventas_totales DESC
-    """
+            fig_clientes = go.Figure()
 
-    df_provincias = pd.read_sql(query_provincias, engine)
+            fig_clientes.add_trace(go.Bar(
+                x=df_clientes_2025['periodo'],
+                y=df_clientes_2025['clientes_activos'],
+                name='Clientes Activos',
+                marker_color=COLORES[1],
+                hovertemplate='Mes: %{x}<br>Clientes: %{y:,}<extra></extra>'
+            ))
 
-    col1, col2 = st.columns(2)
+            fig_clientes.update_layout(
+                title='Clientes Activos por Mes - 2025',
+                xaxis_title='Mes',
+                yaxis_title='Cantidad de Clientes',
+                height=250,
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
 
-    with col1:
-        # Gráfico de barras
-        fig_prov_bar = px.bar(
-            df_provincias,
-            x='ventas_totales',
+            st.plotly_chart(fig_clientes, use_container_width=True)
+
+    # Clientes por provincia
+    df_clientes_prov = kpi_calc.calcular_clientes_por_provincia()
+
+    if not df_clientes_prov.empty:
+        fig_clientes_prov = px.bar(
+            df_clientes_prov,
+            x='num_clientes',
             y='provincia',
             orientation='h',
-            title='Ventas por Provincia',
-            color='ventas_totales',
-            color_continuous_scale='Viridis',
-            labels={'ventas_totales': 'Ventas (₡)', 'provincia': 'Provincia'}
+            title='Cantidad de Clientes por Provincia',
+            color='num_clientes',
+            color_continuous_scale='Greens',
+            labels={'num_clientes': 'Cantidad de Clientes', 'provincia': 'Provincia'}
         )
-        fig_prov_bar.update_layout(height=400)
-        st.plotly_chart(fig_prov_bar, use_container_width=True)
 
-    with col2:
-        # Gráfico de pie con contribución porcentual
-        df_provincias['porcentaje'] = (df_provincias['ventas_totales'] / df_provincias['ventas_totales'].sum() * 100).round(1)
+        fig_clientes_prov.update_layout(
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=False
+        )
 
-        fig_prov_pie = px.pie(
+        st.plotly_chart(fig_clientes_prov, use_container_width=True)
+
+# ====== PERSPECTIVA GEOGRÁFICA ======
+with col_right:
+    st.markdown("""
+    <div class="bsc-section">
+        <h3 style="color: #2c5aa0; margin-top: 0;">🌍 Perspectiva Geográfica</h3>
+        <p style="color: #718096; font-size: 0.9em;">Análisis de ventas por ubicación</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Ventas por provincia (treemap)
+    df_provincias = kpi_calc.calcular_ventas_por_provincia()
+
+    if not df_provincias.empty:
+        # Escala de colores oscuros mejorada para legibilidad
+        color_scale = [
+            [0.0, 'rgb(158, 202, 225)'],  # Azul claro para mínimo
+            [0.3, 'rgb(107, 174, 214)'],  # Azul medio-claro
+            [0.6, 'rgb(66, 146, 198)'],   # Azul medio
+            [0.8, 'rgb(33, 113, 181)'],   # Azul medio-oscuro
+            [1.0, 'rgb(8, 69, 148)']      # Azul oscuro para máximo
+        ]
+
+        fig_treemap = px.treemap(
             df_provincias,
-            values='ventas_totales',
-            names='provincia',
-            title='Contribución Porcentual por Provincia',
-            color_discrete_sequence=COLORES
+            path=['provincia'],
+            values='num_ventas',
+            color='num_ventas',
+            color_continuous_scale=color_scale,
+            title='Distribución de Ventas por Provincia',
+            custom_data=['num_ventas']
         )
-        fig_prov_pie.update_traces(textposition='inside', textinfo='percent+label')
-        fig_prov_pie.update_layout(height=400)
-        st.plotly_chart(fig_prov_pie, use_container_width=True)
 
-    # Tabla detallada
-    st.markdown("#### Detalle por Provincia")
-    df_provincias['ventas_totales'] = df_provincias['ventas_totales'].apply(lambda x: f"₡{x:,.0f}")
-    st.dataframe(df_provincias, use_container_width=True, hide_index=True)
+        fig_treemap.update_traces(
+            textfont=dict(size=14, color='white', family='Arial Black'),
+            marker=dict(line=dict(width=2, color='white')),
+            hovertemplate='<b>%{label}</b><br>Ventas: %{customdata[0]:,}<extra></extra>'
+        )
 
-# ====== TAB 2: TOP PRODUCTOS ======
-with tab2:
-    st.markdown("### Top 20 Productos Más Vendidos")
+        fig_treemap.update_layout(
+            height=250,
+            margin=dict(l=5, r=5, t=40, b=5)
+        )
 
-    df_top_productos = kpi_calc.calcular_productos_mas_vendidos(20, fecha_inicio_str, fecha_fin_str, filtros)
+        st.plotly_chart(fig_treemap, use_container_width=True)
 
-    if not df_top_productos.empty:
-        col1, col2 = st.columns([2, 1])
+    # Ventas por almacén
+    df_almacenes = kpi_calc.calcular_ventas_por_almacen()
 
-        with col1:
-            # Gráfico de barras con productos
-            fig_productos = px.bar(
-                df_top_productos.head(15),
-                x='valor_total',
-                y='nombre_producto',
-                orientation='h',
-                title='Top 15 Productos por Valor de Ventas',
-                color='categoria',
-                labels={'valor_total': 'Ventas (₡)', 'nombre_producto': 'Producto'}
+    if not df_almacenes.empty:
+        fig_almacenes = px.bar(
+            df_almacenes,
+            x='nombre_almacen',
+            y='num_ventas',
+            title='Órdenes por Almacén (Bodega)',
+            color='num_ventas',
+            color_continuous_scale='Blues',
+            labels={'num_ventas': 'Cantidad de Órdenes', 'nombre_almacen': 'Almacén'}
+        )
+
+        fig_almacenes.update_layout(
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20),
+            showlegend=False
+        )
+
+        st.plotly_chart(fig_almacenes, use_container_width=True)
+
+    # Métricas geográficas
+    col_g1, col_g2 = st.columns(2)
+
+    with col_g1:
+        canton_top = kpi_calc.calcular_canton_top()
+        if canton_top and canton_top.get('canton') != 'N/A':
+            st.metric(
+                "🏙️ Cantón Top",
+                canton_top['canton'][:20],
+                f"{canton_top['num_ventas']:,} ventas"
             )
-            fig_productos.update_layout(height=600)
-            st.plotly_chart(fig_productos, use_container_width=True)
 
-        with col2:
-            # Métricas destacadas
-            st.metric("Total Productos", len(df_top_productos))
-            st.metric("Mejor Producto", df_top_productos.iloc[0]['nombre_producto'][:30] + "...")
-            st.metric("Ventas Top Producto", f"₡{df_top_productos.iloc[0]['valor_total']:,.0f}")
-
-            # Distribución por categoría
-            cat_dist = df_top_productos.groupby('categoria')['valor_total'].sum().reset_index()
-            fig_cat_mini = px.pie(
-                cat_dist,
-                values='valor_total',
-                names='categoria',
-                title='Distribución por Categoría',
-                color_discrete_sequence=COLORES
+    with col_g2:
+        distrito_top = kpi_calc.calcular_distrito_top()
+        if distrito_top and distrito_top.get('distrito') != 'N/A':
+            st.metric(
+                "📍 Distrito Top",
+                distrito_top['distrito'][:20],
+                f"{distrito_top['num_ventas']:,} ventas"
             )
-            fig_cat_mini.update_layout(height=300, showlegend=False)
-            st.plotly_chart(fig_cat_mini, use_container_width=True)
 
-        # Tabla detallada
-        st.markdown("#### Ranking Completo")
-        st.dataframe(df_top_productos, use_container_width=True, hide_index=True)
-
-# ====== TAB 3: COMPORTAMIENTO WEB ======
-with tab3:
-    st.markdown("### Análisis de Comportamiento Digital")
-
-    # Métricas por dispositivo
-    df_dispositivos = kpi_calc.calcular_metricas_dispositivos(fecha_inicio_str, fecha_fin_str)
-
-    if not df_dispositivos.empty:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            # Distribución de eventos por dispositivo
-            fig_disp_eventos = px.pie(
-                df_dispositivos,
-                values='total_eventos',
-                names='tipo_dispositivo',
-                title='Eventos por Tipo de Dispositivo',
-                color_discrete_sequence=COLORES
-            )
-            st.plotly_chart(fig_disp_eventos, use_container_width=True)
-
-        with col2:
-            # Tasa de conversión por dispositivo
-            fig_disp_conv = px.bar(
-                df_dispositivos,
-                x='tipo_dispositivo',
-                y='tasa_conversion',
-                title='Tasa de Conversión por Dispositivo',
-                color='tasa_conversion',
-                color_continuous_scale='RdYlGn',
-                labels={'tasa_conversion': 'Conversión (%)', 'tipo_dispositivo': 'Dispositivo'}
-            )
-            st.plotly_chart(fig_disp_conv, use_container_width=True)
-
-        with col3:
-            # Tiempo promedio por dispositivo
-            fig_disp_tiempo = px.bar(
-                df_dispositivos,
-                x='tipo_dispositivo',
-                y='tiempo_promedio_segundos',
-                title='Tiempo Promedio en Sitio (seg)',
-                color='tiempo_promedio_segundos',
-                color_continuous_scale='Blues',
-                labels={'tiempo_promedio_segundos': 'Segundos', 'tipo_dispositivo': 'Dispositivo'}
-            )
-            st.plotly_chart(fig_disp_tiempo, use_container_width=True)
-
-        # Tabla de métricas
-        st.markdown("#### Métricas Detalladas por Dispositivo")
-        st.dataframe(df_dispositivos, use_container_width=True, hide_index=True)
-
-# ====== TAB 4: BÚSQUEDAS VS VENTAS ======
-with tab4:
-    st.markdown("### Productos Más Buscados vs Más Vendidos")
-
-    df_busquedas_ventas = kpi_calc.calcular_productos_mas_buscados_vs_vendidos(20, fecha_inicio_str, fecha_fin_str)
-
-    if not df_busquedas_ventas.empty:
-        col1, col2 = st.columns(2)
-
-        with col1:
-            # Scatter plot: búsquedas vs ventas
-            fig_scatter = px.scatter(
-                df_busquedas_ventas,
-                x='num_busquedas',
-                y='num_ventas',
-                size='unidades_vendidas',
-                color='categoria',
-                hover_name='nombre_producto',
-                title='Búsquedas vs Ventas (tamaño = unidades)',
-                labels={'num_busquedas': 'Número de Búsquedas', 'num_ventas': 'Número de Ventas'}
-            )
-            fig_scatter.update_layout(height=500)
-            st.plotly_chart(fig_scatter, use_container_width=True)
-
-        with col2:
-            # Top productos por tasa de conversión de búsqueda
-            df_top_conv = df_busquedas_ventas[df_busquedas_ventas['tasa_conversion_busqueda'] > 0].nlargest(10, 'tasa_conversion_busqueda')
-
-            fig_conv = px.bar(
-                df_top_conv,
-                x='tasa_conversion_busqueda',
-                y='nombre_producto',
-                orientation='h',
-                title='Top 10 Productos por Conversión de Búsqueda',
-                color='tasa_conversion_busqueda',
-                color_continuous_scale='Greens',
-                labels={'tasa_conversion_busqueda': 'Conversión (%)', 'nombre_producto': 'Producto'}
-            )
-            fig_conv.update_layout(height=500)
-            st.plotly_chart(fig_conv, use_container_width=True)
-
-        # Tabla detallada
-        st.markdown("#### Análisis Completo")
-        st.dataframe(df_busquedas_ventas, use_container_width=True, hide_index=True)
-
+# Divider final antes de Comportamiento Web
 st.markdown("---")
 
-# ============================================================================
-# FOOTER
-# ============================================================================
+# ====== PERSPECTIVA DE COMPORTAMIENTO WEB (ocupando ancho completo) ======
+st.markdown("""
+<div class="bsc-section">
+    <h3 style="color: #2c5aa0; margin-top: 0;">🌐 Perspectiva de Comportamiento Web</h3>
+    <p style="color: #718096; font-size: 0.9em;">Análisis de sesiones y conversión digital</p>
+</div>
+""", unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns(3)
+col_web_left, col_web_right = st.columns([2, 1])
 
-with col1:
-    st.info(f"""
-    **📅 Periodo Analizado**
-    {st.session_state.fecha_inicio.strftime('%d/%m/%Y')} - {st.session_state.fecha_fin.strftime('%d/%m/%Y')}
-    """)
+with col_web_left:
+    # Funnel de comportamiento web (agrupado por sesión)
+    df_funnel_web = kpi_calc.calcular_funnel_comportamiento_web()
 
-with col2:
-    st.success(f"""
-    **✅ Datos Actualizados**
-    Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-    """)
+    if not df_funnel_web.empty:
+        fig_funnel_web = go.Figure(go.Funnel(
+            y=df_funnel_web['etapa'],
+            x=df_funnel_web['cantidad'],
+            textposition="inside",
+            textinfo="value+percent initial",
+            marker=dict(
+                color=['rgb(33, 113, 181)', 'rgb(66, 146, 198)', 'rgb(107, 174, 214)',
+                       'rgb(158, 202, 225)', 'rgb(189, 215, 231)', 'rgb(8, 81, 156)']
+            )
+        ))
 
-with col3:
-    st.warning("""
-    **💡 Balanced Scorecard**
-    4 Perspectivas Estratégicas
-    """)
+        fig_funnel_web.update_layout(
+            title="Funnel de Comportamiento Web (Agrupado por Sesión)",
+            height=400,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
 
+        st.plotly_chart(fig_funnel_web, use_container_width=True)
+
+with col_web_right:
+    # Métricas de comportamiento web
+    metricas_web = kpi_calc.calcular_metricas_comportamiento_web()
+
+    st.metric(
+        "📊 Tasa de Conversión",
+        f"{metricas_web['tasa_conversion']}%",
+        help="Porcentaje de sesiones que generaron venta"
+    )
+    st.metric(
+        "👥 Sesiones Únicas",
+        f"{metricas_web['usuarios_unicos']:,}",
+        help="Cantidad total de sesiones distintas"
+    )
+    st.metric(
+        "🌐 Navegadores Diferentes",
+        f"{metricas_web['navegadores_diferentes']}",
+        help="Cantidad de navegadores distintos utilizados"
+    )
+
+st.markdown("---")
 st.caption("Sistema de Analítica Empresarial - Dashboard Ejecutivo | Balanced Scorecard")

@@ -40,6 +40,8 @@ st.set_page_config(
 # Inicializar componentes y estilos
 inicializar_componentes()
 
+st.title("Ecommerce Cenfotec")
+
 # Título usando componente
 crear_seccion_encabezado(
     "ETL - Carga de Data Warehouse",
@@ -55,7 +57,7 @@ with st.sidebar:
     **Proceso ETL** - Carga completa de datos desde OLTP hacia el Data Warehouse.
 
     **Fases:**
-    - Dimensiones (10 tablas)
+    - Dimensiones (11 tablas)
     - Hechos (3 tablas)
     - Validación
 

@@ -47,6 +47,8 @@ st.set_page_config(
 # Inicializar componentes
 inicializar_componentes()
 
+st.title("Ecommerce Cenfotec")
+
 # Estilos adicionales para chat
 st.markdown("""
 <style>

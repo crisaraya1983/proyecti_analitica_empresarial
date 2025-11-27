@@ -42,6 +42,8 @@ st.set_page_config(
 # Inicializar componentes
 inicializar_componentes()
 
+st.title("Ecommerce Cenfotec")
+
 # Título
 crear_seccion_encabezado(
     "Modelos de Minería de Datos",
