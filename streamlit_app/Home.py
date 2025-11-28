@@ -1,12 +1,3 @@
-"""
-================================================================================
-DASHBOARD EJECUTIVO - BALANCED SCORECARD
-================================================================================
-Dashboard principal con KPIs y visualizaciones clave para toma de decisiones
-Organizado según Balanced Scorecard (4 perspectivas)
-================================================================================
-"""
-
 import sys
 import os
 import streamlit as st
@@ -37,12 +28,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Inicializar componentes y estilos
 inicializar_componentes()
 
 st.title("Ecommerce Cenfotec Analytics")
 
-# Estilos adicionales para el dashboard
 st.markdown("""
 <style>
     /* Métricas destacadas */
@@ -73,7 +62,6 @@ st.markdown("""
 
 @st.cache_resource
 def get_dw_engine():
-    """Obtiene SQLAlchemy engine del DW (cached)"""
     try:
         return DatabaseConnection.get_dw_engine(use_secrets=True)
     except Exception as e:
@@ -124,7 +112,6 @@ with st.spinner("Cargando KPIs principales..."):
             delta_color="normal"
         )
 
-    # Segunda fila: 3 KPIs operacionales
     col4, col5, col6 = st.columns(3)
 
     with col4:
@@ -171,7 +158,6 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # Gráfico de ventas mensuales 2023-2025 (línea con puntos)
     query_ventas_mensual = """
         SELECT
             t.ANIO_CAL,
@@ -208,7 +194,7 @@ with col_left:
         ))
 
         fig_ventas_mensual.update_layout(
-            title='Evolución de Ventas Mensuales (2023 - Oct 2025)',
+            title='Evolución de Ventas Mensuales',
             xaxis_title='Periodo',
             yaxis_title='Ventas (₡)',
             height=250,
@@ -217,24 +203,20 @@ with col_left:
 
         st.plotly_chart(fig_ventas_mensual, use_container_width=True)
 
-    # Gráfico de margen con línea de meta (39%)
     df_crecimiento = kpi_calc.calcular_crecimiento_ventas('mes')
 
     if not df_crecimiento.empty:
-        # Filtrar 2023-2025 (hasta octubre 2025)
         df_filtrado = df_crecimiento[
             (df_crecimiento['ANIO_CAL'] < 2025) |
             ((df_crecimiento['ANIO_CAL'] == 2025) & (df_crecimiento['MES_CAL'] <= 10))
         ].copy()
 
         if not df_filtrado.empty:
-            # Calcular margen porcentual
             df_filtrado['margen_porcentaje'] = (df_filtrado['margen'] / df_filtrado['ventas'] * 100).fillna(0)
             df_filtrado['periodo'] = df_filtrado['ANIO_CAL'].astype(str) + '-' + df_filtrado['MES_CAL'].astype(str).str.zfill(2)
 
             fig_margen = go.Figure()
 
-            # Línea de margen real
             fig_margen.add_trace(go.Scatter(
                 x=df_filtrado['periodo'],
                 y=df_filtrado['margen_porcentaje'],
@@ -244,7 +226,6 @@ with col_left:
                 marker=dict(size=6)
             ))
 
-            # Línea de meta al 39%
             fig_margen.add_trace(go.Scatter(
                 x=df_filtrado['periodo'],
                 y=[39] * len(df_filtrado),
@@ -264,11 +245,9 @@ with col_left:
 
             st.plotly_chart(fig_margen, use_container_width=True)
 
-    # Métricas financieras
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
-        # Total ganancias (margen total agrupado por venta_id)
         query_ganancias = """
             SELECT
                 SUM(MargenFactura) AS ganancia_total
@@ -291,7 +270,6 @@ with col_left:
         )
 
     with col_f2:
-        # Promedio de margen vs meta
         if not df_filtrado.empty:
             margen_promedio = df_filtrado['margen_porcentaje'].mean()
             diferencia_meta = margen_promedio - 39
@@ -311,22 +289,30 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-    # Top 10 productos con mayor margen
-    df_categorias_margen = kpi_calc.calcular_categorias_mayor_margen()
+    query_productos_margen = """
+        SELECT TOP 10
+            p.nombre_producto,
+            SUM(fv.margen) AS margen_total,
+            SUM(fv.monto_total) AS ventas_totales,
+            (SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0)) * 100 AS margen_porcentaje
+        FROM fact_ventas fv
+        INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
+        INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+        WHERE fv.venta_cancelada = 0
+          AND (t.ANIO_CAL < 2025 OR (t.ANIO_CAL = 2025 AND t.MES_CAL <= 10))
+        GROUP BY p.nombre_producto
+        ORDER BY margen_porcentaje DESC
+    """
+    df_productos_margen = pd.read_sql(query_productos_margen, engine)
 
-    if not df_categorias_margen.empty:
-        # Tomar top 10 categorías por margen
-        df_top_10_margen = df_categorias_margen.head(10)
-
-        # Crear escala de colores degradados (más oscuro = mejor margen)
-        # Invertir el orden para que el primero tenga el color más oscuro
-        color_values = list(range(len(df_top_10_margen), 0, -1))
+    if not df_productos_margen.empty:
+        color_values = list(range(len(df_productos_margen), 0, -1))
 
         fig_margen_productos = go.Figure()
 
         fig_margen_productos.add_trace(go.Bar(
-            x=df_top_10_margen['margen_porcentaje'],
-            y=df_top_10_margen['categoria'],
+            x=df_productos_margen['margen_porcentaje'],
+            y=df_productos_margen['nombre_producto'],
             orientation='h',
             marker=dict(
                 color=color_values,
@@ -337,24 +323,21 @@ with col_right:
         ))
 
         fig_margen_productos.update_layout(
-            title='Top 10 Categorías con Mayor Margen (%)',
+            title='Top 10 Productos con Mayor Margen (%)',
             xaxis_title='Margen (%)',
-            yaxis_title='Categoría',
+            yaxis_title='Producto',
             height=250,
             margin=dict(l=20, r=20, t=40, b=20),
-            yaxis={'categoryorder': 'total ascending'}  # Ordenar con mejor margen arriba
+            yaxis={'categoryorder': 'total ascending'}
         )
 
         st.plotly_chart(fig_margen_productos, use_container_width=True)
 
-    # Ventas por Categoría a través del Tiempo (Stacked Bar 100%)
     df_ventas_categoria = kpi_calc.calcular_ventas_por_categoria_tiempo()
 
     if not df_ventas_categoria.empty:
-        # Pivotar datos para gráfico de barras apiladas
         df_pivot = df_ventas_categoria.pivot(index='periodo', columns='categoria', values='ventas').fillna(0)
 
-        # Crear gráfico de barras apiladas al 100%
         fig_ventas_cat = go.Figure()
 
         for categoria in df_pivot.columns:
@@ -373,7 +356,7 @@ with col_right:
             xaxis_title='Periodo',
             yaxis_title='Porcentaje de Ventas (%)',
             barmode='stack',
-            barnorm='percent',  # Normaliza al 100%
+            barnorm='percent',
             height=250,
             margin=dict(l=20, r=20, t=40, b=20),
             legend=dict(
@@ -389,11 +372,9 @@ with col_right:
 
         st.plotly_chart(fig_ventas_cat, use_container_width=True)
 
-    # Métricas de productos
     col_p1, col_p2 = st.columns(2)
 
     with col_p1:
-        # Producto más vendido
         producto_top = kpi_calc.calcular_producto_mas_vendido()
         if producto_top and producto_top.get('producto_nombre') != 'N/A':
             st.metric(
@@ -403,7 +384,6 @@ with col_right:
             )
 
     with col_p2:
-        # Producto con mayor margen
         producto_margen = kpi_calc.calcular_producto_mayor_margen()
         if producto_margen and producto_margen.get('producto_nombre') != 'N/A':
             st.metric(
@@ -412,10 +392,8 @@ with col_right:
                 f"₡{producto_margen['margen_total']:,.0f}"
             )
 
-# Divider entre Financiera/Productos y Clientes/Geográfica
 st.markdown("---")
 
-# Segunda fila del Balanced Scorecard
 col_left2, col_right2 = st.columns(2)
 
 # ====== PERSPECTIVA DE CLIENTES ======
@@ -427,11 +405,9 @@ with col_left2:
     </div>
     """, unsafe_allow_html=True)
 
-    # Clientes activos por mes (2023-2025)
     df_clientes_mes = kpi_calc.calcular_clientes_activos_por_mes()
 
     if not df_clientes_mes.empty:
-        # Filtrar 2023-2025 hasta octubre
         df_clientes_filtrado = df_clientes_mes[
             (df_clientes_mes['ANIO_CAL'] < 2025) |
             ((df_clientes_mes['ANIO_CAL'] == 2025) & (df_clientes_mes['MES_CAL'] <= 10))
@@ -453,7 +429,7 @@ with col_left2:
             ))
 
             fig_clientes.update_layout(
-                title='Evolución de Clientes Activos (2023 - Oct 2025)',
+                title='Evolución de Clientes Activos',
                 xaxis_title='Periodo',
                 yaxis_title='Cantidad de Clientes',
                 height=250,
@@ -462,7 +438,6 @@ with col_left2:
 
             st.plotly_chart(fig_clientes, use_container_width=True)
 
-    # Clientes por provincia
     df_clientes_prov = kpi_calc.calcular_clientes_por_provincia()
 
     if not df_clientes_prov.empty:
@@ -485,11 +460,9 @@ with col_left2:
 
         st.plotly_chart(fig_clientes_prov, use_container_width=True)
 
-    # Métricas de clientes
     col_c1, col_c2 = st.columns(2)
 
     with col_c1:
-        # Días promedio entre compras
         dias_promedio = kpi_calc.calcular_dias_promedio_entre_compras()
         if dias_promedio:
             st.metric(
@@ -499,7 +472,6 @@ with col_left2:
             )
 
     with col_c2:
-        # Promedio de compras por cliente
         query_promedio_compras = """
             SELECT
                 AVG(CAST(num_compras AS FLOAT)) AS promedio_compras_cliente
@@ -530,7 +502,6 @@ with col_right2:
     </div>
     """, unsafe_allow_html=True)
 
-    # Ventas por provincia (treemap con montos)
     query_provincias_monto = """
         SELECT
             g.provincia,
@@ -556,13 +527,11 @@ with col_right2:
     df_provincias_monto = pd.read_sql(query_provincias_monto, engine)
 
     if not df_provincias_monto.empty:
-        # Crear labels con provincia y monto
         df_provincias_monto['label_texto'] = df_provincias_monto.apply(
             lambda row: f"{row['provincia']}<br>₡{row['monto_total']:,.0f}",
             axis=1
         )
 
-        # Escala de colores oscuros mejorada para legibilidad
         color_scale = [
             [0.0, 'rgb(158, 202, 225)'],  # Azul claro para mínimo
             [0.3, 'rgb(107, 174, 214)'],  # Azul medio-claro
@@ -595,11 +564,9 @@ with col_right2:
 
         st.plotly_chart(fig_treemap, use_container_width=True)
 
-    # Ventas por almacén (barras verticales)
     df_almacenes = kpi_calc.calcular_ventas_por_almacen()
 
     if not df_almacenes.empty:
-        # Ordenar por cantidad descendente
         df_almacenes_sorted = df_almacenes.sort_values('num_ventas', ascending=False)
 
         fig_almacenes = go.Figure()
@@ -615,7 +582,7 @@ with col_right2:
         ))
 
         fig_almacenes.update_layout(
-            title='Órdenes por Almacén (Bodega)',
+            title='Órdenes por Almacén',
             xaxis_title='Almacén',
             yaxis_title='Cantidad de Órdenes',
             height=250,
@@ -625,7 +592,6 @@ with col_right2:
 
         st.plotly_chart(fig_almacenes, use_container_width=True)
 
-    # Métricas geográficas
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
@@ -646,21 +612,19 @@ with col_right2:
                 f"{distrito_top['num_ventas']:,} ventas"
             )
 
-# Divider final antes de Comportamiento Web
 st.markdown("---")
 
-# ====== PERSPECTIVA DE COMPORTAMIENTO WEB (ocupando ancho completo) ======
-st.markdown("""
-<div class="bsc-section">
-    <h3 style="color: #2c5aa0; margin-top: 0;">🌐 Perspectiva de Comportamiento Web</h3>
-    <p style="color: #718096; font-size: 0.9em;">Análisis de sesiones y conversión digital</p>
-</div>
-""", unsafe_allow_html=True)
+col_comportamiento, col_busquedas = st.columns(2)
 
-col_web_left, col_web_right = st.columns([2, 1])
+# ====== PERSPECTIVA DE COMPORTAMIENTO WEB ======
+with col_comportamiento:
+    st.markdown("""
+    <div class="bsc-section">
+        <h3 style="color: #2c5aa0; margin-top: 0;">🌐 Perspectiva de Comportamiento Web</h3>
+        <p style="color: #718096; font-size: 0.9em;">Análisis de sesiones y conversión digital</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-with col_web_left:
-    # Funnel de comportamiento web (agrupado por sesión)
     df_funnel_web = kpi_calc.calcular_funnel_comportamiento_web()
 
     if not df_funnel_web.empty:
@@ -676,32 +640,162 @@ with col_web_left:
         ))
 
         fig_funnel_web.update_layout(
-            title="Funnel de Comportamiento Web (Agrupado por Sesión)",
-            height=400,
+            title="Funnel de Comportamiento Web",
+            height=350,
             margin=dict(l=20, r=20, t=40, b=20)
         )
 
         st.plotly_chart(fig_funnel_web, use_container_width=True)
 
-with col_web_right:
-    # Métricas de comportamiento web
     metricas_web = kpi_calc.calcular_metricas_comportamiento_web()
 
-    st.metric(
-        "📊 Tasa de Conversión",
-        f"{metricas_web['tasa_conversion']}%",
-        help="Porcentaje de sesiones que generaron venta"
-    )
-    st.metric(
-        "👥 Sesiones Únicas",
-        f"{metricas_web['usuarios_unicos']:,}",
-        help="Cantidad total de sesiones distintas"
-    )
-    st.metric(
-        "🌐 Navegadores Diferentes",
-        f"{metricas_web['navegadores_diferentes']}",
-        help="Cantidad de navegadores distintos utilizados"
-    )
+    col_m1, col_m2, col_m3 = st.columns(3)
+
+    with col_m1:
+        st.metric(
+            "📊 Tasa de Conversión",
+            f"{metricas_web['tasa_conversion']}%",
+            help="Porcentaje de sesiones que generaron venta"
+        )
+
+    with col_m2:
+        st.metric(
+            "👥 Sesiones Únicas",
+            f"{metricas_web['usuarios_unicos']:,}",
+            help="Cantidad total de sesiones distintas"
+        )
+
+    with col_m3:
+        st.metric(
+            "🌐 Navegadores Diferentes",
+            f"{metricas_web['navegadores_diferentes']}",
+            help="Cantidad de navegadores distintos utilizados"
+        )
+
+with col_busquedas:
+    st.markdown("""
+    <div class="bsc-section">
+        <h3 style="color: #2c5aa0; margin-top: 0;">🔍 Perspectiva de Búsquedas Web</h3>
+        <p style="color: #718096; font-size: 0.9em;">Análisis de búsquedas y productos más buscados</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("**📊 Resumen de Búsquedas por Dispositivo y Navegador**")
+
+    df_dispositivos = kpi_calc.calcular_busquedas_por_dispositivo()
+    df_navegadores = kpi_calc.calcular_busquedas_por_navegador()
+    df_so = kpi_calc.calcular_busquedas_por_sistema_operativo()
+    df_tipo_disp = kpi_calc.calcular_busquedas_por_tipo_dispositivo()
+
+    col_b1, col_b2 = st.columns(2)
+
+    with col_b1:
+        if not df_dispositivos.empty:
+            df_dispositivos_top10 = df_dispositivos.head(10)
+            fig_dispositivos = go.Figure()
+            fig_dispositivos.add_trace(go.Bar(
+                x=df_dispositivos_top10['num_busquedas'],
+                y=df_dispositivos_top10['dispositivo'],
+                orientation='h',
+                marker_color=COLORES[2],
+                hovertemplate='<b>%{y}</b><br>Búsquedas: %{x:,}<extra></extra>'
+            ))
+            fig_dispositivos.update_layout(
+                title='Top 10 Dispositivos',
+                xaxis_title='Búsquedas',
+                yaxis_title='',
+                height=200,
+                margin=dict(l=10, r=10, t=40, b=20),
+                yaxis={'categoryorder': 'total ascending'}
+            )
+            st.plotly_chart(fig_dispositivos, use_container_width=True)
+
+    with col_b2:
+        if not df_navegadores.empty:
+            fig_navegadores = go.Figure()
+            fig_navegadores.add_trace(go.Bar(
+                x=df_navegadores['num_busquedas'],
+                y=df_navegadores['navegador'],
+                orientation='h',
+                marker_color=COLORES[1],
+                hovertemplate='<b>%{y}</b><br>Búsquedas: %{x:,}<extra></extra>'
+            ))
+            fig_navegadores.update_layout(
+                title='Navegadores',
+                xaxis_title='Búsquedas',
+                yaxis_title='',
+                height=200,
+                margin=dict(l=10, r=10, t=40, b=20),
+                yaxis={'categoryorder': 'total ascending'}
+            )
+            st.plotly_chart(fig_navegadores, use_container_width=True)
+
+    col_b3, col_b4 = st.columns(2)
+
+    with col_b3:
+        if not df_so.empty:
+            fig_so = go.Figure()
+            fig_so.add_trace(go.Bar(
+                x=df_so['num_busquedas'],
+                y=df_so['sistema_operativo'],
+                orientation='h',
+                marker_color=COLORES[3],
+                hovertemplate='<b>%{y}</b><br>Búsquedas: %{x:,}<extra></extra>'
+            ))
+            fig_so.update_layout(
+                title='Sistema Operativo',
+                xaxis_title='Búsquedas',
+                yaxis_title='',
+                height=200,
+                margin=dict(l=10, r=10, t=40, b=20),
+                yaxis={'categoryorder': 'total ascending'}
+            )
+            st.plotly_chart(fig_so, use_container_width=True)
+
+    with col_b4:
+        if not df_tipo_disp.empty:
+            fig_tipo_disp = go.Figure()
+            fig_tipo_disp.add_trace(go.Bar(
+                x=df_tipo_disp['num_busquedas'],
+                y=df_tipo_disp['tipo_dispositivo'],
+                orientation='h',
+                marker_color=COLORES[0],
+                hovertemplate='<b>%{y}</b><br>Búsquedas: %{x:,}<extra></extra>'
+            ))
+            fig_tipo_disp.update_layout(
+                title='Tipo de Dispositivo',
+                xaxis_title='Búsquedas',
+                yaxis_title='',
+                height=200,
+                margin=dict(l=10, r=10, t=40, b=20),
+                yaxis={'categoryorder': 'total ascending'}
+            )
+            st.plotly_chart(fig_tipo_disp, use_container_width=True)
+
+    metricas_busquedas = kpi_calc.calcular_metricas_busquedas_web()
+
+    col_b1, col_b2, col_b3 = st.columns(3)
+
+    with col_b1:
+        st.metric(
+            "🔢 Productos Buscados",
+            f"{metricas_busquedas['productos_buscados']:,}",
+            help="Cantidad de productos únicos buscados"
+        )
+
+    with col_b2:
+        st.metric(
+            "💰 Búsquedas con Venta",
+            f"{metricas_busquedas['busquedas_con_venta']:,}",
+            help="Cantidad de búsquedas que terminaron en venta"
+        )
+
+    with col_b3:
+        st.metric(
+            "📊 Promedio Resultados",
+            f"{metricas_busquedas['promedio_resultados']:.1f}",
+            help="Promedio de resultados retornados por búsqueda"
+        )
 
 st.markdown("---")
 st.caption("Sistema de Analítica Empresarial - Dashboard Ejecutivo | Balanced Scorecard")

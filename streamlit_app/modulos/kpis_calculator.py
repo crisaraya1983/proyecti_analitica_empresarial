@@ -1,16 +1,3 @@
-"""
-================================================================================
-MÓDULO DE CÁLCULO DE KPIs - BALANCED SCORECARD
-================================================================================
-Implementa funciones para calcular todos los KPIs del negocio
-Organizado según las 4 perspectivas del Balanced Scorecard:
-- Financiera
-- Clientes
-- Procesos Internos
-- Aprendizaje y Crecimiento
-================================================================================
-"""
-
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -28,49 +15,28 @@ class KPICalculator:
     """
 
     def __init__(self, conn: Union[pyodbc.Connection, Engine]):
-        """
-        Inicializa el calculador de KPIs
 
-        Args:
-            conn: Conexión pyodbc o SQLAlchemy Engine a la base de datos DW.
-                  Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
-        """
         self.conn = conn
 
     def _convertir_tipos_arrow_compatibles(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convierte tipos nullable de pandas (Int64, Float64, etc.) a tipos estándar numpy
-        para evitar errores de serialización con PyArrow/Streamlit.
 
-        Args:
-            df: DataFrame a convertir
-
-        Returns:
-            DataFrame con tipos compatibles con Arrow
-        """
         for col in df.columns:
             if hasattr(df[col].dtype, 'numpy_dtype'):  # Es un tipo nullable de pandas
                 df[col] = df[col].astype(df[col].dtype.numpy_dtype)
         return df
 
-    # ========================================================================
     # PERSPECTIVA FINANCIERA
-    # ========================================================================
 
     def calcular_ventas_totales(self,
                                 fecha_inicio: Optional[str] = None,
                                 fecha_fin: Optional[str] = None,
                                 filtros: Dict = None) -> Dict:
-        """
-        Calcula ventas totales correctamente considerando que fact_ventas
-        tiene múltiples registros por venta_id (detalle por línea de producto)
-        """
+
         logger.info("Calculando ventas totales...")
 
         condiciones = self._construir_condiciones_filtro(filtros)
         filtro_where = " AND ".join(condiciones) if condiciones else "1=1"
 
-        # Ventas periodo actual - Agrupar por venta_id primero
         query_actual = f"""
             SELECT
                 SUM(MontoFactura) AS ventas_totales,
@@ -94,7 +60,6 @@ class KPICalculator:
 
         df_actual = pd.read_sql(query_actual, self.conn)
 
-        # Calcular periodo anterior (mismo rango de tiempo anterior)
         if fecha_inicio and fecha_fin:
             inicio = pd.to_datetime(fecha_inicio)
             fin = pd.to_datetime(fecha_fin)
@@ -142,19 +107,12 @@ class KPICalculator:
                                  fecha_inicio: Optional[str] = None,
                                  fecha_fin: Optional[str] = None,
                                  filtros: Dict = None) -> Dict:
-        """
-        Calcula margen de ganancia promedio correctamente considerando que fact_ventas
-        tiene múltiples registros por venta_id (detalle por línea de producto)
 
-        Returns:
-            Dict con margen actual, anterior y variación
-        """
         logger.info("Calculando margen de ganancia...")
 
         condiciones = self._construir_condiciones_filtro(filtros)
         filtro_where = " AND ".join(condiciones) if condiciones else "1=1"
 
-        # Agrupar por venta_id primero para obtener totales correctos
         query = f"""
             SELECT
                 SUM(MargenFactura) AS margen_total,
@@ -185,16 +143,7 @@ class KPICalculator:
         }
 
     def calcular_crecimiento_ventas(self, periodo: str = 'mes') -> pd.DataFrame:
-        """
-        Calcula crecimiento de ventas periodo a periodo correctamente considerando que fact_ventas
-        tiene múltiples registros por venta_id (detalle por línea de producto)
 
-        Args:
-            periodo: 'mes', 'trimestre', 'anio'
-
-        Returns:
-            DataFrame con crecimiento por periodo
-        """
         logger.info(f"Calculando crecimiento de ventas por {periodo}...")
 
         if periodo == 'mes':
@@ -213,8 +162,6 @@ class KPICalculator:
             orden = "ANIO_CAL"
             select_grupo = "ANIO_CAL"
 
-        # Agrupar por venta_id primero, luego por periodo
-        # Excluir noviembre 2025 (202511) para mantener solo hasta octubre 2025
         query = f"""
             SELECT
                 {select_grupo},
@@ -237,7 +184,6 @@ class KPICalculator:
 
         df = pd.read_sql(query, self.conn)
 
-        # Crear etiqueta de periodo
         if periodo == 'mes' and 'MES_CAL' in df.columns:
             df['periodo'] = df['ANIO_CAL'].astype(str) + '-' + df['MES_CAL'].astype(str).str.zfill(2)
         elif periodo == 'trimestre' and 'TRIMESTRE' in df.columns:
@@ -245,29 +191,20 @@ class KPICalculator:
         else:
             df['periodo'] = df['ANIO_CAL'].astype(str)
 
-        # Calcular crecimiento periodo a periodo
         df['ventas_anterior'] = df['ventas'].shift(1)
         df['crecimiento_porcentaje'] = ((df['ventas'] - df['ventas_anterior']) / df['ventas_anterior'] * 100)
 
-        # Calcular margen porcentaje
         df['margen_porcentaje'] = (df['margen'] / df['ventas'] * 100).fillna(0)
 
         return df
 
-    # ========================================================================
     # PERSPECTIVA DE CLIENTES
-    # ========================================================================
 
     def calcular_clientes_activos(self,
                                    fecha_inicio: Optional[str] = None,
                                    fecha_fin: Optional[str] = None,
                                    filtros: Dict = None) -> Dict:
-        """
-        Calcula número de clientes activos (con al menos 1 compra en el periodo)
 
-        Returns:
-            Dict con clientes activos actual, anterior y variación
-        """
         logger.info("Calculando clientes activos...")
 
         condiciones = self._construir_condiciones_filtro(filtros)
@@ -289,7 +226,6 @@ class KPICalculator:
 
         df_actual = pd.read_sql(query_actual, self.conn)
 
-        # Periodo anterior
         if fecha_inicio and fecha_fin:
             inicio = pd.to_datetime(fecha_inicio)
             fin = pd.to_datetime(fecha_fin)
@@ -326,15 +262,7 @@ class KPICalculator:
         }
 
     def calcular_tasa_retencion(self, meses: int = 3) -> Dict:
-        """
-        Calcula tasa de retención de clientes
 
-        Args:
-            meses: Número de meses para calcular retención
-
-        Returns:
-            Dict con tasa de retención
-        """
         logger.info(f"Calculando tasa de retención ({meses} meses)...")
 
         fecha_inicio = (datetime.now() - timedelta(days=meses * 30)).strftime('%Y-%m-%d')
@@ -370,15 +298,7 @@ class KPICalculator:
         }
 
     def calcular_customer_lifetime_value(self, top_n: int = 100) -> pd.DataFrame:
-        """
-        Calcula Customer Lifetime Value
 
-        Args:
-            top_n: Número de clientes top a retornar
-
-        Returns:
-            DataFrame con CLV por cliente
-        """
         logger.info("Calculando Customer Lifetime Value...")
 
         query = f"""
@@ -404,12 +324,7 @@ class KPICalculator:
     def calcular_frecuencia_compra(self,
                                    fecha_inicio: Optional[str] = None,
                                    fecha_fin: Optional[str] = None) -> Dict:
-        """
-        Calcula frecuencia de compra promedio
 
-        Returns:
-            Dict con frecuencia promedio y distribución
-        """
         logger.info("Calculando frecuencia de compra...")
 
         query = f"""
@@ -437,21 +352,14 @@ class KPICalculator:
             'min_compras': int(df['min_compras'].iloc[0]) if not df.empty else 0
         }
 
-    # ========================================================================
     # PERSPECTIVA DE PRODUCTOS
-    # ========================================================================
 
     def calcular_productos_mas_vendidos(self,
                                         top_n: int = 10,
                                         fecha_inicio: Optional[str] = None,
                                         fecha_fin: Optional[str] = None,
                                         filtros: Dict = None) -> pd.DataFrame:
-        """
-        Calcula productos más vendidos por unidades y valor
 
-        Returns:
-            DataFrame con productos y métricas
-        """
         logger.info(f"Calculando top {top_n} productos más vendidos...")
 
         condiciones = self._construir_condiciones_filtro(filtros)
@@ -485,12 +393,7 @@ class KPICalculator:
                                          fecha_inicio: Optional[str] = None,
                                          fecha_fin: Optional[str] = None,
                                          filtros: Dict = None) -> pd.DataFrame:
-        """
-        Calcula categorías con mayor margen
 
-        Returns:
-            DataFrame con categorías y márgenes
-        """
         logger.info("Calculando categorías con mayor margen...")
 
         condiciones = self._construir_condiciones_filtro(filtros)
@@ -519,13 +422,7 @@ class KPICalculator:
         return self._convertir_tipos_arrow_compatibles(df)
 
     def calcular_ventas_por_categoria_tiempo(self) -> pd.DataFrame:
-        """
-        Calcula ventas por categoría a través del tiempo (mensual)
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            DataFrame con año, mes, categoría y ventas
-        """
         logger.info("Calculando ventas por categoría a través del tiempo...")
 
         query = """
@@ -553,18 +450,11 @@ class KPICalculator:
         """
 
         df = pd.read_sql(query, self.conn)
-        # Crear etiqueta de periodo
         df['periodo'] = df['ANIO_CAL'].astype(str) + '-' + df['MES_CAL'].astype(str).str.zfill(2)
         return self._convertir_tipos_arrow_compatibles(df)
 
     def calcular_dias_promedio_entre_compras(self) -> Dict:
-        """
-        Calcula el promedio de días que tardan los clientes en volver a comprar
-        Solo considera clientes que han comprado más de una vez
 
-        Returns:
-            Dict con promedio de días entre compras
-        """
         logger.info("Calculando días promedio entre compras...")
 
         query = """
@@ -605,13 +495,7 @@ class KPICalculator:
         }
 
     def calcular_clientes_activos_por_mes(self) -> pd.DataFrame:
-        """
-        Calcula cantidad de clientes únicos que compraron por mes
-        Desde 2023 hasta octubre 2025 (excluye noviembre 2025)
 
-        Returns:
-            DataFrame con año, mes y cantidad de clientes
-        """
         logger.info("Calculando clientes activos por mes...")
 
         query = """
@@ -628,18 +512,11 @@ class KPICalculator:
         """
 
         df = pd.read_sql(query, self.conn)
-        # Crear etiqueta de periodo
         df['periodo'] = df['ANIO_CAL'].astype(str) + '-' + df['MES_CAL'].astype(str).str.zfill(2)
         return self._convertir_tipos_arrow_compatibles(df)
 
     def calcular_producto_mas_vendido(self) -> Dict:
-        """
-        Calcula el producto más vendido (por cantidad de unidades)
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            Dict con nombre del producto y cantidad vendida
-        """
         logger.info("Calculando producto más vendido...")
 
         query = """
@@ -666,13 +543,7 @@ class KPICalculator:
         }
 
     def calcular_producto_mayor_margen(self) -> Dict:
-        """
-        Calcula el producto con mayor margen de ganancia total
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            Dict con nombre del producto y margen total
-        """
         logger.info("Calculando producto con mayor margen...")
 
         query = """
@@ -698,18 +569,10 @@ class KPICalculator:
             'margen_total': float(df['margen_total'].iloc[0])
         }
 
-    # ========================================================================
     # PERSPECTIVA GEOGRÁFICA
-    # ========================================================================
 
     def calcular_ventas_por_provincia(self) -> pd.DataFrame:
-        """
-        Calcula cantidad de órdenes únicas por provincia
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
-
-        Returns:
-            DataFrame con provincia y cantidad de ventas (venta_id únicos)
-        """
+ 
         logger.info("Calculando ventas por provincia...")
 
         query = """
@@ -730,13 +593,7 @@ class KPICalculator:
         return self._convertir_tipos_arrow_compatibles(df)
 
     def calcular_ventas_por_almacen(self) -> pd.DataFrame:
-        """
-        Calcula cantidad de órdenes únicas despachadas por cada almacén/bodega
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            DataFrame con nombre_almacen, tipo_almacen y cantidad de ventas
-        """
         logger.info("Calculando ventas por almacén...")
 
         query = """
@@ -757,13 +614,7 @@ class KPICalculator:
         return self._convertir_tipos_arrow_compatibles(df)
 
     def calcular_canton_top(self) -> Dict:
-        """
-        Calcula el cantón con más compras (venta_id únicos)
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            Dict con nombre del cantón y cantidad de ventas
-        """
         logger.info("Calculando cantón top...")
 
         query = """
@@ -791,13 +642,7 @@ class KPICalculator:
         }
 
     def calcular_distrito_top(self) -> Dict:
-        """
-        Calcula el distrito con más compras (venta_id únicos)
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            Dict con nombre del distrito y cantidad de ventas
-        """
         logger.info("Calculando distrito top...")
 
         query = """
@@ -829,13 +674,7 @@ class KPICalculator:
         }
 
     def calcular_clientes_por_provincia(self) -> pd.DataFrame:
-        """
-        Calcula cantidad de clientes únicos por provincia
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            DataFrame con provincia y cantidad de clientes únicos
-        """
         logger.info("Calculando clientes por provincia...")
 
         query = """
@@ -855,19 +694,10 @@ class KPICalculator:
         df = pd.read_sql(query, self.conn)
         return self._convertir_tipos_arrow_compatibles(df)
 
-    # ========================================================================
     # PERSPECTIVA DE COMPORTAMIENTO WEB
-    # ========================================================================
 
     def calcular_funnel_comportamiento_web(self) -> pd.DataFrame:
-        """
-        Calcula el funnel de comportamiento web con eventos clave
-        Agrupa por session_id únicos para cada etapa
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            DataFrame con etapas del funnel y cantidad de sesiones únicas
-        """
         logger.info("Calculando funnel de comportamiento web...")
 
         query = """
@@ -911,13 +741,7 @@ class KPICalculator:
         return pd.DataFrame(funnel_data)
 
     def calcular_metricas_comportamiento_web(self) -> Dict:
-        """
-        Calcula métricas clave de comportamiento web
-        Excluye noviembre 2025, mantiene desde 2023 hasta octubre 2025
 
-        Returns:
-            Dict con tasa de conversión, usuarios únicos y navegadores diferentes
-        """
         logger.info("Calculando métricas de comportamiento web...")
 
         query = """
@@ -956,13 +780,7 @@ class KPICalculator:
     def calcular_tasa_conversion(self,
                                   fecha_inicio: Optional[str] = None,
                                   fecha_fin: Optional[str] = None) -> Dict:
-        """
-        Calcula tasa de conversión (ventas / sesiones)
-        DEPRECATED: Usar calcular_metricas_comportamiento_web() en su lugar
 
-        Returns:
-            Dict con métricas de conversión
-        """
         logger.info("Calculando tasa de conversión...")
 
         query = f"""
@@ -992,12 +810,7 @@ class KPICalculator:
                                                      top_n: int = 20,
                                                      fecha_inicio: Optional[str] = None,
                                                      fecha_fin: Optional[str] = None) -> pd.DataFrame:
-        """
-        Compara productos más buscados vs más vendidos
 
-        Returns:
-            DataFrame con comparación
-        """
         logger.info("Calculando productos más buscados vs vendidos...")
 
         query = f"""
@@ -1048,12 +861,7 @@ class KPICalculator:
     def calcular_metricas_dispositivos(self,
                                        fecha_inicio: Optional[str] = None,
                                        fecha_fin: Optional[str] = None) -> pd.DataFrame:
-        """
-        Calcula métricas por tipo de dispositivo
 
-        Returns:
-            DataFrame con métricas por dispositivo
-        """
         logger.info("Calculando métricas por dispositivo...")
 
         query = f"""
@@ -1079,12 +887,7 @@ class KPICalculator:
     def calcular_funnel_conversion(self,
                                     fecha_inicio: Optional[str] = None,
                                     fecha_fin: Optional[str] = None) -> pd.DataFrame:
-        """
-        Calcula el funnel de conversión completo
 
-        Returns:
-            DataFrame con etapas del funnel
-        """
         logger.info("Calculando funnel de conversión...")
 
         query = f"""
@@ -1153,12 +956,10 @@ class KPICalculator:
         df = pd.read_sql(query, self.conn)
         return self._convertir_tipos_arrow_compatibles(df)
 
-    # ========================================================================
     # FUNCIONES AUXILIARES
-    # ========================================================================
 
     def _construir_condiciones_filtro(self, filtros: Optional[Dict]) -> list:
-        """Construye lista de condiciones WHERE basado en filtros"""
+
         condiciones = []
 
         if not filtros:
@@ -1192,20 +993,13 @@ class KPICalculator:
 
         return " ".join(filtros)
 
-    # ========================================================================
     # BALANCED SCORECARD COMPLETO
-    # ========================================================================
 
     def obtener_balanced_scorecard(self,
                                     fecha_inicio: Optional[str] = None,
                                     fecha_fin: Optional[str] = None,
                                     filtros: Dict = None) -> Dict:
-        """
-        Obtiene todos los KPIs organizados según Balanced Scorecard
 
-        Returns:
-            Dict con 4 perspectivas y sus KPIs
-        """
         logger.info("Generando Balanced Scorecard completo...")
 
         return {
@@ -1228,21 +1022,10 @@ class KPICalculator:
             }
         }
 
-    # ========================================================================
     # KPIs ANUALES 2025 vs 2024 (NO AFECTADOS POR FILTROS)
-    # ========================================================================
 
     def calcular_kpis_principales_2025(self, mes_hasta: int = 10) -> Dict:
-        """
-        Calcula los KPIs principales para 2025 vs 2024 hasta un mes específico.
-        Estos KPIs NO se ven afectados por los filtros de sidebar.
 
-        Args:
-            mes_hasta: Mes hasta el cual comparar (por defecto 10 = octubre)
-
-        Returns:
-            Dict con métricas 2025, 2024 y variaciones porcentuales
-        """
         logger.info(f"Calculando KPIs principales 2025 vs 2024 (hasta mes {mes_hasta})...")
 
         # Query para ventas totales 2025
@@ -1266,7 +1049,6 @@ class KPICalculator:
             ) AS Facturas
         """
 
-        # Query para ventas totales 2024
         query_ventas_2024 = f"""
             SELECT
                 SUM(MontoFactura) AS ventas_totales,
@@ -1287,7 +1069,6 @@ class KPICalculator:
             ) AS Facturas
         """
 
-        # Query para ventas canceladas 2025
         query_canceladas_2025 = f"""
             SELECT
                 COUNT(DISTINCT venta_id) AS ventas_canceladas
@@ -1300,7 +1081,6 @@ class KPICalculator:
             ) AS VentasCanceladas
         """
 
-        # Query para ventas canceladas 2024
         query_canceladas_2024 = f"""
             SELECT
                 COUNT(DISTINCT venta_id) AS ventas_canceladas
@@ -1313,7 +1093,6 @@ class KPICalculator:
             ) AS VentasCanceladas
         """
 
-        # Query para total productos vendidos 2025
         query_productos_2025 = f"""
             SELECT
                 SUM(cantidad) AS total_productos_vendidos
@@ -1323,7 +1102,6 @@ class KPICalculator:
               AND tiempo_key <= 2025{str(mes_hasta).zfill(2)}31
         """
 
-        # Query para total productos vendidos 2024
         query_productos_2024 = f"""
             SELECT
                 SUM(cantidad) AS total_productos_vendidos
@@ -1333,7 +1111,6 @@ class KPICalculator:
               AND tiempo_key <= 2024{str(mes_hasta).zfill(2)}31
         """
 
-        # Query para clientes únicos 2025
         query_clientes_2025 = f"""
             SELECT
                 COUNT(DISTINCT cliente_id) AS clientes_activos
@@ -1343,7 +1120,6 @@ class KPICalculator:
               AND tiempo_key <= 2025{str(mes_hasta).zfill(2)}31
         """
 
-        # Query para clientes únicos 2024
         query_clientes_2024 = f"""
             SELECT
                 COUNT(DISTINCT cliente_id) AS clientes_activos
@@ -1353,7 +1129,6 @@ class KPICalculator:
               AND tiempo_key <= 2024{str(mes_hasta).zfill(2)}31
         """
 
-        # Query para promedio de productos por venta 2025
         query_promedio_productos_2025 = f"""
             SELECT
                 AVG(CAST(CantidadProductos AS FLOAT)) AS promedio_productos_por_venta
@@ -1369,7 +1144,6 @@ class KPICalculator:
             ) AS ProductosPorVenta
         """
 
-        # Query para promedio de productos por venta 2024
         query_promedio_productos_2024 = f"""
             SELECT
                 AVG(CAST(CantidadProductos AS FLOAT)) AS promedio_productos_por_venta
@@ -1385,7 +1159,6 @@ class KPICalculator:
             ) AS ProductosPorVenta
         """
 
-        # Ejecutar todas las queries
         df_ventas_2025 = pd.read_sql(query_ventas_2025, self.conn)
         df_ventas_2024 = pd.read_sql(query_ventas_2024, self.conn)
         df_canceladas_2025 = pd.read_sql(query_canceladas_2025, self.conn)
@@ -1397,7 +1170,6 @@ class KPICalculator:
         df_promedio_productos_2025 = pd.read_sql(query_promedio_productos_2025, self.conn)
         df_promedio_productos_2024 = pd.read_sql(query_promedio_productos_2024, self.conn)
 
-        # Extraer valores
         ventas_2025 = float(df_ventas_2025['ventas_totales'].iloc[0] or 0)
         ventas_2024 = float(df_ventas_2024['ventas_totales'].iloc[0] or 0)
         num_ventas_2025 = int(df_ventas_2025['num_ventas'].iloc[0] or 0)
@@ -1419,55 +1191,45 @@ class KPICalculator:
         promedio_productos_2025 = float(df_promedio_productos_2025['promedio_productos_por_venta'].iloc[0] or 0)
         promedio_productos_2024 = float(df_promedio_productos_2024['promedio_productos_por_venta'].iloc[0] or 0)
 
-        # Calcular totales de ventas (completadas + canceladas)
         total_ventas_2025 = num_ventas_2025 + canceladas_2025
         total_ventas_2024 = num_ventas_2024 + canceladas_2024
 
-        # Calcular tasas de completación y cancelación
         tasa_completadas_2025 = (num_ventas_2025 / total_ventas_2025 * 100) if total_ventas_2025 > 0 else 0
         tasa_completadas_2024 = (num_ventas_2024 / total_ventas_2024 * 100) if total_ventas_2024 > 0 else 0
 
         tasa_canceladas_2025 = (canceladas_2025 / total_ventas_2025 * 100) if total_ventas_2025 > 0 else 0
         tasa_canceladas_2024 = (canceladas_2024 / total_ventas_2024 * 100) if total_ventas_2024 > 0 else 0
 
-        # Calcular variaciones porcentuales
         def calcular_variacion(actual, anterior):
             if anterior > 0:
                 return ((actual - anterior) / anterior) * 100
             return 0 if actual == 0 else 100
 
-        # Calcular variación en puntos porcentuales para tasas
         def calcular_variacion_puntos(tasa_actual, tasa_anterior):
             return tasa_actual - tasa_anterior
 
-        # Calcular margen porcentual
         margen_porcentaje_2025 = (margen_2025 / ventas_2025 * 100) if ventas_2025 > 0 else 0
         margen_porcentaje_2024 = (margen_2024 / ventas_2024 * 100) if ventas_2024 > 0 else 0
 
         return {
-            # Ventas Totales
             'ventas_totales_2025': ventas_2025,
             'ventas_totales_2024': ventas_2024,
             'ventas_variacion': calcular_variacion(ventas_2025, ventas_2024),
 
-            # Margen de Ganancia
             'margen_total_2025': margen_2025,
             'margen_porcentaje_2025': margen_porcentaje_2025,
             'margen_total_2024': margen_2024,
             'margen_porcentaje_2024': margen_porcentaje_2024,
             'margen_variacion': calcular_variacion(margen_porcentaje_2025, margen_porcentaje_2024),
 
-            # Ticket Promedio
             'ticket_promedio_2025': ticket_2025,
             'ticket_promedio_2024': ticket_2024,
             'ticket_variacion': calcular_variacion(ticket_2025, ticket_2024),
 
-            # Clientes Activos
             'clientes_activos_2025': clientes_2025,
             'clientes_activos_2024': clientes_2024,
             'clientes_variacion': calcular_variacion(clientes_2025, clientes_2024),
 
-            # Ventas Completadas y Canceladas (CANTIDADES Y TASAS)
             'ventas_completadas_2025': num_ventas_2025,
             'ventas_completadas_2024': num_ventas_2024,
             'tasa_completadas_2025': tasa_completadas_2025,
@@ -1480,30 +1242,17 @@ class KPICalculator:
             'tasa_canceladas_2024': tasa_canceladas_2024,
             'ventas_canceladas_variacion': calcular_variacion_puntos(tasa_canceladas_2025, tasa_canceladas_2024),
 
-            # Total Productos Vendidos
             'productos_vendidos_2025': productos_2025,
             'productos_vendidos_2024': productos_2024,
             'productos_variacion': calcular_variacion(productos_2025, productos_2024),
 
-            # Promedio Productos por Venta
             'promedio_productos_2025': promedio_productos_2025,
             'promedio_productos_2024': promedio_productos_2024,
             'promedio_productos_variacion': calcular_variacion(promedio_productos_2025, promedio_productos_2024)
         }
 
     def calcular_funnel_comportamiento_web(self) -> pd.DataFrame:
-        """
-        Calcula el funnel de comportamiento web agrupado por sesión
-        - Total sesiones únicas (distinct codigo_sesion)
-        - Clientes identificados (sesiones con cliente reconocido)
-        - Añadir al carrito (tipo_evento = 'ANADIR_CARRITO')
-        - Vista de ofertas (tipo_evento = 'VISTA_OFERTAS')
-        - Iniciar checkout (tipo_evento = 'INICIAR_CHECKOUT')
-        - Conversión de ventas (sesiones que generaron venta)
 
-        Returns:
-            DataFrame con etapas del funnel
-        """
         logger.info("Calculando funnel de comportamiento web...")
 
         query = """
@@ -1523,7 +1272,6 @@ class KPICalculator:
 
         df = pd.read_sql(query, self.conn)
 
-        # Crear DataFrame del funnel
         funnel_data = {
             'etapa': [
                 'Total Sesiones',
@@ -1546,15 +1294,7 @@ class KPICalculator:
         return pd.DataFrame(funnel_data)
 
     def calcular_metricas_comportamiento_web(self) -> Dict:
-        """
-        Calcula métricas clave de comportamiento web
-        - Tasa de conversión (sesiones con venta / sesiones totales)
-        - Usuarios únicos (sesiones únicas)
-        - Navegadores diferentes usados
 
-        Returns:
-            Dict con métricas web
-        """
         logger.info("Calculando métricas de comportamiento web...")
 
         query = """
@@ -1581,4 +1321,96 @@ class KPICalculator:
             'usuarios_unicos': sesiones_unicas,
             'navegadores_diferentes': int(df['navegadores_diferentes'].iloc[0]),
             'total_eventos': int(df['total_eventos'].iloc[0])
+        }
+
+    # PERSPECTIVA DE BÚSQUEDAS WEB
+
+    def calcular_busquedas_por_dispositivo(self) -> pd.DataFrame:
+
+        logger.info("Calculando búsquedas por dispositivo...")
+
+        query = """
+            SELECT TOP 10
+                d.dispositivo,
+                COUNT(*) AS num_busquedas
+            FROM fact_busquedas fb
+            INNER JOIN dim_dispositivo d ON fb.dispositivo_id = d.dispositivo_id
+            GROUP BY d.dispositivo
+            ORDER BY COUNT(*) DESC
+        """
+
+        df = pd.read_sql(query, self.conn)
+        return self._convertir_tipos_arrow_compatibles(df)
+
+    def calcular_busquedas_por_navegador(self) -> pd.DataFrame:
+
+        logger.info("Calculando búsquedas por navegador...")
+
+        query = """
+            SELECT
+                n.navegador,
+                COUNT(*) AS num_busquedas
+            FROM fact_busquedas fb
+            INNER JOIN dim_navegador n ON fb.navegador_id = n.navegador_id
+            GROUP BY n.navegador
+            ORDER BY COUNT(*) DESC
+        """
+
+        df = pd.read_sql(query, self.conn)
+        return self._convertir_tipos_arrow_compatibles(df)
+
+    def calcular_busquedas_por_sistema_operativo(self) -> pd.DataFrame:
+
+        logger.info("Calculando búsquedas por sistema operativo...")
+
+        query = """
+            SELECT
+                d.sistema_operativo,
+                COUNT(*) AS num_busquedas
+            FROM fact_busquedas fb
+            INNER JOIN dim_dispositivo d ON fb.dispositivo_id = d.dispositivo_id
+            GROUP BY d.sistema_operativo
+            ORDER BY COUNT(*) DESC
+        """
+
+        df = pd.read_sql(query, self.conn)
+        return self._convertir_tipos_arrow_compatibles(df)
+
+    def calcular_busquedas_por_tipo_dispositivo(self) -> pd.DataFrame:
+
+        logger.info("Calculando búsquedas por tipo de dispositivo...")
+
+        query = """
+            SELECT TOP 10
+                d.tipo_dispositivo,
+                COUNT(*) AS num_busquedas
+            FROM fact_busquedas fb
+            INNER JOIN dim_dispositivo d ON fb.dispositivo_id = d.dispositivo_id
+            GROUP BY d.tipo_dispositivo
+            ORDER BY COUNT(*) DESC
+        """
+
+        df = pd.read_sql(query, self.conn)
+        return self._convertir_tipos_arrow_compatibles(df)
+
+    def calcular_metricas_busquedas_web(self) -> Dict:
+
+        logger.info("Calculando métricas de búsquedas web...")
+
+        query = """
+            SELECT
+                COUNT(*) AS total_busquedas,
+                COUNT(DISTINCT producto_id) AS productos_buscados,
+                COUNT(DISTINCT CASE WHEN genero_venta = 1 THEN busqueda_id END) AS busquedas_con_venta,
+                AVG(CAST(cantidad_resultados AS FLOAT)) AS promedio_resultados
+            FROM fact_busquedas
+        """
+
+        df = pd.read_sql(query, self.conn)
+
+        return {
+            'total_busquedas': int(df['total_busquedas'].iloc[0]),
+            'productos_buscados': int(df['productos_buscados'].iloc[0]),
+            'busquedas_con_venta': int(df['busquedas_con_venta'].iloc[0]),
+            'promedio_resultados': round(float(df['promedio_resultados'].iloc[0]), 1)
         }
