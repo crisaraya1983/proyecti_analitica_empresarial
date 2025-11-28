@@ -451,31 +451,215 @@ with tab2:
                 mes_num = int(mes_sel.split('(')[1].split(')')[0])
                 filters['mes'] = mes_num
 
-        if st.button("Ejecutar DICE", use_container_width=True):
-            with st.spinner("Ejecutando DICE..."):
+        if st.button("Aplicar Filtros y Analizar", use_container_width=True, type="primary"):
+            with st.spinner("Procesando análisis multidimensional..."):
                 try:
                     # Convertir dict a tuple para caché
                     filters_tuple = tuple(sorted(filters.items()))
                     df = ejecutar_dice(cubo, filters_tuple)
 
                     if not df.empty:
-                        st.success(f"DICE ejecutado con {len(filters)} filtros")
-                        st.dataframe(df, use_container_width=True)
+                        # Debug: Mostrar columnas disponibles (temporal)
+                        # st.write("Columnas disponibles:", df.columns.tolist())
 
-                        if 'mes_nombre' in df.columns and 'total_ventas' in df.columns:
-                            fig = px.line(
-                                df,
-                                x='mes_nombre',
-                                y='total_ventas',
-                                title='Evolución de Ventas',
-                                markers=True
+                        # Mostrar KPIs principales
+                        st.markdown("### Resultados del Análisis")
+
+                        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+
+                        with col_k1:
+                            # Usar cantidad_ordenes si existe, sino usar cantidad_transacciones (backward compatibility)
+                            ordenes_col = 'cantidad_ordenes' if 'cantidad_ordenes' in df.columns else 'cantidad_transacciones'
+                            st.metric(
+                                "Órdenes Totales",
+                                f"{df[ordenes_col].sum():,}",
+                                help="Número total de órdenes que cumplen los filtros"
                             )
+
+                        with col_k2:
+                            st.metric(
+                                "Ingresos Totales",
+                                f"₡{df['total_ventas'].sum():,.2f}",
+                                help="Monto total de ventas filtradas"
+                            )
+
+                        with col_k3:
+                            total_margen = df['total_margen'].sum()
+                            total_ventas_sum = df['total_ventas'].sum()
+                            margen_pct = (total_margen / total_ventas_sum * 100) if total_ventas_sum > 0 else 0
+                            st.metric(
+                                "Margen Promedio",
+                                f"{margen_pct:.2f}%",
+                                help=f"Ganancia: ₡{total_margen:,.2f}"
+                            )
+
+                        with col_k4:
+                            st.metric(
+                                "Registros Encontrados",
+                                f"{len(df):,}",
+                                help="Número de combinaciones únicas en resultados"
+                            )
+
+                        st.markdown("---")
+
+                        # Gráfico mejorado
+                        if 'mes_nombre' in df.columns and 'total_ventas' in df.columns:
+                            st.markdown("### Evolución Temporal")
+
+                            # Determinar columna de órdenes
+                            ordenes_col = 'cantidad_ordenes' if 'cantidad_ordenes' in df.columns else 'cantidad_transacciones'
+
+                            # Agrupar por año y mes para el gráfico
+                            df_mes = df.groupby(['anio', 'mes', 'mes_nombre'], as_index=False).agg({
+                                'total_ventas': 'sum',
+                                'total_margen': 'sum',
+                                ordenes_col: 'sum'
+                            }).sort_values(['anio', 'mes'])
+
+                            # Verificar cuántos años únicos hay
+                            años_unicos = df_mes['anio'].unique()
+
+                            fig = go.Figure()
+
+                            if len(años_unicos) == 1:
+                                # UN SOLO AÑO: Gráfico simple con barras y línea
+                                fig.add_trace(go.Bar(
+                                    x=df_mes['mes_nombre'],
+                                    y=df_mes['total_ventas'],
+                                    name='Ventas',
+                                    marker_color='#3498db',
+                                    hovertemplate='<b>%{x}</b><br>Ventas: ₡%{y:,.2f}<br>Órdenes: %{customdata:,}<extra></extra>',
+                                    customdata=df_mes[ordenes_col]
+                                ))
+
+                                # Línea de ganancia
+                                fig.add_trace(go.Scatter(
+                                    x=df_mes['mes_nombre'],
+                                    y=df_mes['total_margen'],
+                                    name='Ganancia',
+                                    mode='lines+markers',
+                                    marker=dict(
+                                        color='#2ecc71',
+                                        size=10,
+                                        line=dict(width=2, color='white')
+                                    ),
+                                    line=dict(width=3, color='#2ecc71'),
+                                    hovertemplate='<b>%{x}</b><br>Ganancia: ₡%{y:,.2f}<extra></extra>'
+                                ))
+
+                                title = f'Ventas y Ganancia por Mes - {años_unicos[0]}'
+
+                            else:
+                                # MÚLTIPLES AÑOS: Gráfico con barras apiladas (stacked) por año
+                                colores_años = ['#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c']
+                                colores_ganancia = ['#2ecc71', '#27ae60', '#16a085', '#d4ac0d', '#117a65']
+
+                                # Crear un DataFrame pivoteado para facilitar el stacking
+                                df_pivot = df_mes.pivot(index='mes_nombre', columns='anio', values='total_ventas').fillna(0)
+                                df_pivot_margen = df_mes.pivot(index='mes_nombre', columns='anio', values='total_margen').fillna(0)
+
+                                # Ordenar meses correctamente
+                                orden_meses = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+                                             'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+                                df_pivot = df_pivot.reindex([m for m in orden_meses if m in df_pivot.index])
+                                df_pivot_margen = df_pivot_margen.reindex([m for m in orden_meses if m in df_pivot_margen.index])
+
+                                # Agregar barras apiladas por año
+                                for idx, año in enumerate(sorted(años_unicos)):
+                                    if año in df_pivot.columns:
+                                        color_bar = colores_años[idx % len(colores_años)]
+
+                                        fig.add_trace(go.Bar(
+                                            x=df_pivot.index,
+                                            y=df_pivot[año],
+                                            name=f'Ventas {int(año)}',
+                                            marker_color=color_bar,
+                                            hovertemplate=f'<b>%{{x}} {int(año)}</b><br>Ventas: ₡%{{y:,.2f}}<extra></extra>'
+                                        ))
+
+                                # Agregar líneas de ganancia por año
+                                # Calcular la posición acumulada para posicionar las líneas correctamente
+                                acumulado = df_pivot_margen * 0  # Inicializar en 0
+
+                                for idx, año in enumerate(sorted(años_unicos)):
+                                    if año in df_pivot_margen.columns:
+                                        color_line = colores_ganancia[idx % len(colores_ganancia)]
+
+                                        # Calcular posición Y de la línea (debe estar dentro de su segmento de barra)
+                                        # La línea va en el medio del segmento correspondiente al año
+                                        y_base = acumulado.sum(axis=1) if idx > 0 else df_pivot.iloc[:, :idx].sum(axis=1)
+                                        y_position = y_base + (df_pivot_margen[año] / 2)  # Mitad del segmento de ganancia
+
+                                        fig.add_trace(go.Scatter(
+                                            x=df_pivot_margen.index,
+                                            y=df_pivot_margen[año],
+                                            name=f'Ganancia {int(año)}',
+                                            mode='lines+markers',
+                                            marker=dict(
+                                                color=color_line,
+                                                size=8,
+                                                line=dict(width=2, color='white')
+                                            ),
+                                            line=dict(width=2, color=color_line),
+                                            hovertemplate=f'<b>%{{x}} {int(año)}</b><br>Ganancia: ₡%{{y:,.2f}}<extra></extra>'
+                                        ))
+
+                                title = 'Ventas y Ganancia por Mes (Comparativa por Año)'
+                                fig.update_layout(barmode='stack')  # Barras apiladas
+
+                            fig.update_layout(
+                                title=title,
+                                xaxis_title='Mes',
+                                yaxis_title='Monto (₡)',
+                                hovermode='x unified',
+                                height=500,
+                                showlegend=True,
+                                legend=dict(
+                                    orientation="v",
+                                    yanchor="top",
+                                    y=1,
+                                    xanchor="left",
+                                    x=1.02
+                                )
+                            )
+
                             st.plotly_chart(fig, use_container_width=True)
+
+                        st.markdown("---")
+
+                        # Tabla de resultados limitada a 100 registros para visualización
+                        st.markdown("### Tabla de Resultados Detallados")
+                        st.caption(f"Mostrando los primeros 100 de {len(df):,} registros totales")
+
+                        df_display = df.head(100).copy()
+
+                        # Formatear valores numéricos
+                        for col in df_display.columns:
+                            if 'porcentaje' in col.lower():
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
+                            elif col in ['total_ventas', 'promedio_por_orden', 'total_margen', 'total_impuesto']:
+                                df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
+                            elif col in ['cantidad_ordenes', 'cantidad_transacciones', 'total_unidades']:
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:,}" if pd.notna(x) else "")
+
+                        st.dataframe(df_display, use_container_width=True, height=400)
+
+                        # Opción para descargar datos completos
+                        with st.expander("📥 Descargar Datos Completos"):
+                            st.download_button(
+                                label="Descargar CSV con todos los registros",
+                                data=df.to_csv(index=False).encode('utf-8'),
+                                file_name=f"analisis_multidimensional_{len(filters)}_filtros.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
                     else:
-                        st.warning("No hay datos para estos filtros")
+                        st.warning("No hay datos disponibles para la combinación de filtros seleccionada")
 
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    st.error(f"Error durante el análisis: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
     except Exception as e:
         st.error(f"Error: {str(e)}")

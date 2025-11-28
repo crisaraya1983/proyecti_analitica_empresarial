@@ -315,10 +315,55 @@ class CuboOLAP:
         return self._execute_query(drill_down_queries[dimension], (value,))
 
     def dice(self, filters: Dict[str, any]) -> pd.DataFrame:
-        """DICE: Selecciona subrectángulo del cubo con múltiples filtros"""
+        """DICE: Selecciona subrectángulo del cubo con múltiples filtros (con agrupación correcta por venta_id)"""
         logger.info(f"DICE: aplicando {len(filters)} filtros")
 
-        query = """
+        # Construir WHERE clause dinámicamente
+        where_conditions = ["fv.venta_cancelada = 0"]
+        params = []
+
+        if 'provincia' in filters:
+            where_conditions.append("g.provincia = ?")
+            params.append(filters['provincia'])
+        if 'canton' in filters:
+            where_conditions.append("g.canton = ?")
+            params.append(filters['canton'])
+        if 'categoria' in filters:
+            where_conditions.append("pr.categoria = ?")
+            params.append(filters['categoria'])
+        if 'anio' in filters:
+            where_conditions.append("t.ANIO_CAL = ?")
+            params.append(filters['anio'])
+        if 'mes' in filters:
+            where_conditions.append("t.MES_CAL = ?")
+            params.append(filters['mes'])
+
+        where_clause = " AND ".join(where_conditions)
+
+        query = f"""
+            WITH VentasAgrupadas AS (
+                SELECT
+                    fv.venta_id,
+                    fv.tiempo_key,
+                    fv.producto_id,
+                    fv.cliente_id,
+                    fv.provincia_id,
+                    fv.canton_id,
+                    fv.distrito_id,
+                    fv.almacen_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta,
+                    SUM(fv.impuesto) AS impuesto_venta
+                FROM fact_ventas fv
+                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
+                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                WHERE {where_clause}
+                GROUP BY fv.venta_id, fv.tiempo_key, fv.producto_id, fv.cliente_id,
+                         fv.provincia_id, fv.canton_id, fv.distrito_id, fv.almacen_id
+            )
             SELECT
                 t.ANIO_CAL AS anio,
                 t.MES_CAL AS mes,
@@ -329,49 +374,25 @@ class CuboOLAP:
                 g.distrito,
                 CONCAT(cl.nombre_cliente, ' ', cl.apellido_cliente) AS cliente,
                 a.nombre_almacen AS almacen,
-
-                COUNT(DISTINCT fv.venta_detalle_key) AS cantidad_transacciones,
-                SUM(fv.cantidad) AS total_cantidad,
-                SUM(fv.monto_total) AS total_ventas,
-                AVG(fv.monto_total) AS promedio_venta,
-                SUM(fv.margen) AS total_margen,
-                ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                SUM(fv.impuesto) AS total_impuesto
-
-            FROM fact_ventas fv
-            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-            INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
-            INNER JOIN dim_cliente cl ON fv.cliente_id = cl.cliente_id
-            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-            INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-
-            WHERE 1=1
-        """
-
-        params = []
-        if 'provincia' in filters:
-            query += " AND g.provincia = ?"
-            params.append(filters['provincia'])
-        if 'canton' in filters:
-            query += " AND g.canton = ?"
-            params.append(filters['canton'])
-        if 'categoria' in filters:
-            query += " AND pr.categoria = ?"
-            params.append(filters['categoria'])
-        if 'anio' in filters:
-            query += " AND t.ANIO_CAL = ?"
-            params.append(filters['anio'])
-        if 'mes' in filters:
-            query += " AND t.MES_CAL = ?"
-            params.append(filters['mes'])
-
-        query += """
+                COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                SUM(va.total_unidades) AS total_unidades,
+                SUM(va.monto_venta) AS total_ventas,
+                AVG(va.monto_venta) AS promedio_por_orden,
+                SUM(va.margen_venta) AS total_margen,
+                ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                SUM(va.impuesto_venta) AS total_impuesto
+            FROM VentasAgrupadas va
+            INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
+            INNER JOIN dim_cliente cl ON va.cliente_id = cl.cliente_id
+            INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
+            INNER JOIN dim_almacen a ON va.almacen_id = a.almacen_id
             GROUP BY
                 t.ANIO_CAL, t.MES_CAL, t.MES_NOMBRE,
                 pr.categoria, g.provincia, g.canton, g.distrito,
                 cl.nombre_cliente, cl.apellido_cliente, a.nombre_almacen
-            ORDER BY t.ANIO_CAL DESC, t.MES_CAL DESC
+            ORDER BY t.ANIO_CAL DESC, t.MES_CAL DESC, SUM(va.monto_venta) DESC
         """
 
         return self._execute_query(query, tuple(params) if params else None)
