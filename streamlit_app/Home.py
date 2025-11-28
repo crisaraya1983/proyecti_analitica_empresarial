@@ -171,6 +171,52 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
+    # Gráfico de ventas mensuales 2023-2025 (línea con puntos)
+    query_ventas_mensual = """
+        SELECT
+            t.ANIO_CAL,
+            t.MES_CAL,
+            SUM(MontoFactura) AS ventas_totales
+        FROM (
+            SELECT
+                venta_id,
+                SUM(monto_total) AS MontoFactura,
+                tiempo_key
+            FROM fact_ventas
+            WHERE venta_cancelada = 0
+            GROUP BY venta_id, tiempo_key
+        ) AS Facturas
+        INNER JOIN dim_tiempo t ON Facturas.tiempo_key = t.ID_FECHA
+        WHERE (t.ANIO_CAL < 2025 OR (t.ANIO_CAL = 2025 AND t.MES_CAL <= 10))
+        GROUP BY t.ANIO_CAL, t.MES_CAL
+        ORDER BY t.ANIO_CAL, t.MES_CAL
+    """
+    df_ventas_mensual = pd.read_sql(query_ventas_mensual, engine)
+
+    if not df_ventas_mensual.empty:
+        df_ventas_mensual['periodo'] = df_ventas_mensual['ANIO_CAL'].astype(str) + '-' + df_ventas_mensual['MES_CAL'].astype(str).str.zfill(2)
+
+        fig_ventas_mensual = go.Figure()
+
+        fig_ventas_mensual.add_trace(go.Scatter(
+            x=df_ventas_mensual['periodo'],
+            y=df_ventas_mensual['ventas_totales'],
+            mode='lines+markers',
+            line=dict(color=COLORES[0], width=3),
+            marker=dict(size=6, color=COLORES[0]),
+            hovertemplate='Periodo: %{x}<br>Ventas: ₡%{y:,.0f}<extra></extra>'
+        ))
+
+        fig_ventas_mensual.update_layout(
+            title='Evolución de Ventas Mensuales (2023 - Oct 2025)',
+            xaxis_title='Periodo',
+            yaxis_title='Ventas (₡)',
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+
+        st.plotly_chart(fig_ventas_mensual, use_container_width=True)
+
     # Gráfico de margen con línea de meta (39%)
     df_crecimiento = kpi_calc.calcular_crecimiento_ventas('mes')
 
@@ -211,12 +257,95 @@ with col_left:
                 title='Margen de Ganancia (%) - Meta: 39%',
                 xaxis_title='Periodo',
                 yaxis_title='Margen (%)',
-                height=300,
+                height=250,
                 margin=dict(l=20, r=20, t=40, b=20),
                 hovermode='x unified'
             )
 
             st.plotly_chart(fig_margen, use_container_width=True)
+
+    # Métricas financieras
+    col_f1, col_f2 = st.columns(2)
+
+    with col_f1:
+        # Total ganancias (margen total agrupado por venta_id)
+        query_ganancias = """
+            SELECT
+                SUM(MargenFactura) AS ganancia_total
+            FROM (
+                SELECT
+                    venta_id,
+                    SUM(margen) AS MargenFactura
+                FROM fact_ventas
+                WHERE venta_cancelada = 0
+                GROUP BY venta_id
+            ) AS Facturas
+        """
+        df_ganancias = pd.read_sql(query_ganancias, engine)
+        ganancia_total = df_ganancias['ganancia_total'].iloc[0] if not df_ganancias.empty else 0
+
+        st.metric(
+            "💰 Total Ganancias",
+            f"₡{ganancia_total:,.0f}",
+            help="Suma total del margen de todas las ventas"
+        )
+
+    with col_f2:
+        # Promedio de margen vs meta
+        if not df_filtrado.empty:
+            margen_promedio = df_filtrado['margen_porcentaje'].mean()
+            diferencia_meta = margen_promedio - 39
+            st.metric(
+                "🎯 Promedio Margen vs Meta",
+                f"{margen_promedio:.1f}%",
+                f"{diferencia_meta:+.1f}pp vs 39%",
+                delta_color="normal" if diferencia_meta >= 0 else "inverse"
+            )
+
+# ====== PERSPECTIVA DE PRODUCTOS ======
+with col_right:
+    st.markdown("""
+    <div class="bsc-section">
+        <h3 style="color: #2c5aa0; margin-top: 0;">📦 Perspectiva de Productos</h3>
+        <p style="color: #718096; font-size: 0.9em;">Performance de productos y categorías</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Top 10 productos con mayor margen
+    df_categorias_margen = kpi_calc.calcular_categorias_mayor_margen()
+
+    if not df_categorias_margen.empty:
+        # Tomar top 10 categorías por margen
+        df_top_10_margen = df_categorias_margen.head(10)
+
+        # Crear escala de colores degradados (más oscuro = mejor margen)
+        # Invertir el orden para que el primero tenga el color más oscuro
+        color_values = list(range(len(df_top_10_margen), 0, -1))
+
+        fig_margen_productos = go.Figure()
+
+        fig_margen_productos.add_trace(go.Bar(
+            x=df_top_10_margen['margen_porcentaje'],
+            y=df_top_10_margen['categoria'],
+            orientation='h',
+            marker=dict(
+                color=color_values,
+                colorscale='Blues',
+                showscale=False
+            ),
+            hovertemplate='<b>%{y}</b><br>Margen: %{x:.2f}%<extra></extra>'
+        ))
+
+        fig_margen_productos.update_layout(
+            title='Top 10 Categorías con Mayor Margen (%)',
+            xaxis_title='Margen (%)',
+            yaxis_title='Categoría',
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20),
+            yaxis={'categoryorder': 'total ascending'}  # Ordenar con mejor margen arriba
+        )
+
+        st.plotly_chart(fig_margen_productos, use_container_width=True)
 
     # Ventas por Categoría a través del Tiempo (Stacked Bar 100%)
     df_ventas_categoria = kpi_calc.calcular_ventas_por_categoria_tiempo()
@@ -235,7 +364,7 @@ with col_left:
                 y=df_pivot[categoria],
                 hovertemplate='<b>%{fullData.name}</b><br>' +
                              'Periodo: %{x}<br>' +
-                             'Ventas: ₡%{y:,.0f}<br>' +
+                             'Ventas: %%{y:,.0f}<br>' +
                              '<extra></extra>'
             ))
 
@@ -245,7 +374,7 @@ with col_left:
             yaxis_title='Porcentaje de Ventas (%)',
             barmode='stack',
             barnorm='percent',  # Normaliza al 100%
-            height=300,
+            height=250,
             margin=dict(l=20, r=20, t=40, b=20),
             legend=dict(
                 orientation="v",
@@ -260,10 +389,10 @@ with col_left:
 
         st.plotly_chart(fig_ventas_cat, use_container_width=True)
 
-    # Métricas adicionales debajo del gráfico stack
-    col_m1, col_m2 = st.columns(2)
+    # Métricas de productos
+    col_p1, col_p2 = st.columns(2)
 
-    with col_m1:
+    with col_p1:
         # Producto más vendido
         producto_top = kpi_calc.calcular_producto_mas_vendido()
         if producto_top and producto_top.get('producto_nombre') != 'N/A':
@@ -273,7 +402,7 @@ with col_left:
                 f"{producto_top['cantidad_vendida']:,} unidades"
             )
 
-    with col_m2:
+    with col_p2:
         # Producto con mayor margen
         producto_margen = kpi_calc.calcular_producto_mayor_margen()
         if producto_margen and producto_margen.get('producto_nombre') != 'N/A':
@@ -283,46 +412,14 @@ with col_left:
                 f"₡{producto_margen['margen_total']:,.0f}"
             )
 
-# ====== PERSPECTIVA DE PRODUCTOS ======
-with col_right:
-    st.markdown("""
-    <div class="bsc-section">
-        <h3 style="color: #2c5aa0; margin-top: 0;">📦 Perspectiva de Productos</h3>
-        <p style="color: #718096; font-size: 0.9em;">Performance de productos y categorías</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Categorías con mayor margen
-    df_categorias_margen = kpi_calc.calcular_categorias_mayor_margen()
-
-    if not df_categorias_margen.empty:
-        # Tomar solo top 8 categorías
-        df_top_categorias = df_categorias_margen.head(8)
-
-        fig_categorias = px.bar(
-            df_top_categorias,
-            x='margen_porcentaje',
-            y='categoria',
-            orientation='h',
-            title='Top 8 Categorías por Margen (%)',
-            color='margen_porcentaje',
-            color_continuous_scale='Blues',
-            labels={'margen_porcentaje': 'Margen %', 'categoria': 'Categoría'}
-        )
-
-        fig_categorias.update_layout(
-            height=600,
-            margin=dict(l=20, r=20, t=40, b=20),
-            showlegend=False
-        )
-
-        st.plotly_chart(fig_categorias, use_container_width=True)
-
-# Divider entre las dos filas del Balanced Scorecard
+# Divider entre Financiera/Productos y Clientes/Geográfica
 st.markdown("---")
 
+# Segunda fila del Balanced Scorecard
+col_left2, col_right2 = st.columns(2)
+
 # ====== PERSPECTIVA DE CLIENTES ======
-with col_left:
+with col_left2:
     st.markdown("""
     <div class="bsc-section">
         <h3 style="color: #2c5aa0; margin-top: 0;">👥 Perspectiva de Clientes</h3>
@@ -330,31 +427,34 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # Clientes activos por mes (2025)
+    # Clientes activos por mes (2023-2025)
     df_clientes_mes = kpi_calc.calcular_clientes_activos_por_mes()
 
     if not df_clientes_mes.empty:
-        # Filtrar solo 2025 hasta octubre
-        df_clientes_2025 = df_clientes_mes[
-            (df_clientes_mes['ANIO_CAL'] == 2025) & (df_clientes_mes['MES_CAL'] <= 10)
+        # Filtrar 2023-2025 hasta octubre
+        df_clientes_filtrado = df_clientes_mes[
+            (df_clientes_mes['ANIO_CAL'] < 2025) |
+            ((df_clientes_mes['ANIO_CAL'] == 2025) & (df_clientes_mes['MES_CAL'] <= 10))
         ].copy()
 
-        if not df_clientes_2025.empty:
-            df_clientes_2025['periodo'] = df_clientes_2025['MES_CAL'].astype(str).str.zfill(2)
+        if not df_clientes_filtrado.empty:
+            df_clientes_filtrado['periodo'] = df_clientes_filtrado['ANIO_CAL'].astype(str) + '-' + df_clientes_filtrado['MES_CAL'].astype(str).str.zfill(2)
 
             fig_clientes = go.Figure()
 
-            fig_clientes.add_trace(go.Bar(
-                x=df_clientes_2025['periodo'],
-                y=df_clientes_2025['clientes_activos'],
+            fig_clientes.add_trace(go.Scatter(
+                x=df_clientes_filtrado['periodo'],
+                y=df_clientes_filtrado['clientes_activos'],
+                mode='lines+markers',
                 name='Clientes Activos',
-                marker_color=COLORES[1],
-                hovertemplate='Mes: %{x}<br>Clientes: %{y:,}<extra></extra>'
+                line=dict(color=COLORES[1], width=3),
+                marker=dict(size=6, color=COLORES[1]),
+                hovertemplate='Periodo: %{x}<br>Clientes: %{y:,}<extra></extra>'
             ))
 
             fig_clientes.update_layout(
-                title='Clientes Activos por Mes - 2025',
-                xaxis_title='Mes',
+                title='Evolución de Clientes Activos (2023 - Oct 2025)',
+                xaxis_title='Periodo',
                 yaxis_title='Cantidad de Clientes',
                 height=250,
                 margin=dict(l=20, r=20, t=40, b=20)
@@ -385,8 +485,44 @@ with col_left:
 
         st.plotly_chart(fig_clientes_prov, use_container_width=True)
 
+    # Métricas de clientes
+    col_c1, col_c2 = st.columns(2)
+
+    with col_c1:
+        # Días promedio entre compras
+        dias_promedio = kpi_calc.calcular_dias_promedio_entre_compras()
+        if dias_promedio:
+            st.metric(
+                "📅 Días entre Compras",
+                f"{dias_promedio['dias_promedio']:.0f} días",
+                help="Promedio de días entre compras de los clientes"
+            )
+
+    with col_c2:
+        # Promedio de compras por cliente
+        query_promedio_compras = """
+            SELECT
+                AVG(CAST(num_compras AS FLOAT)) AS promedio_compras_cliente
+            FROM (
+                SELECT
+                    cliente_id,
+                    COUNT(DISTINCT venta_id) AS num_compras
+                FROM fact_ventas
+                WHERE venta_cancelada = 0
+                GROUP BY cliente_id
+            ) AS ComprasPorCliente
+        """
+        df_promedio_compras = pd.read_sql(query_promedio_compras, engine)
+        promedio_compras = df_promedio_compras['promedio_compras_cliente'].iloc[0] if not df_promedio_compras.empty else 0
+
+        st.metric(
+            "🛒 Promedio Compras/Cliente",
+            f"{promedio_compras:.1f}",
+            help="Promedio de compras realizadas por cada cliente"
+        )
+
 # ====== PERSPECTIVA GEOGRÁFICA ======
-with col_right:
+with col_right2:
     st.markdown("""
     <div class="bsc-section">
         <h3 style="color: #2c5aa0; margin-top: 0;">🌍 Perspectiva Geográfica</h3>
@@ -394,10 +530,38 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-    # Ventas por provincia (treemap)
-    df_provincias = kpi_calc.calcular_ventas_por_provincia()
+    # Ventas por provincia (treemap con montos)
+    query_provincias_monto = """
+        SELECT
+            g.provincia,
+            COUNT(DISTINCT Facturas.venta_id) AS num_ventas,
+            SUM(Facturas.MontoFactura) AS monto_total
+        FROM (
+            SELECT
+                venta_id,
+                provincia_id,
+                canton_id,
+                distrito_id,
+                SUM(monto_total) AS MontoFactura
+            FROM fact_ventas
+            WHERE venta_cancelada = 0
+            GROUP BY venta_id, provincia_id, canton_id, distrito_id
+        ) AS Facturas
+        INNER JOIN dim_geografia g ON Facturas.provincia_id = g.provincia_id
+            AND Facturas.canton_id = g.canton_id
+            AND Facturas.distrito_id = g.distrito_id
+        GROUP BY g.provincia
+        ORDER BY num_ventas DESC
+    """
+    df_provincias_monto = pd.read_sql(query_provincias_monto, engine)
 
-    if not df_provincias.empty:
+    if not df_provincias_monto.empty:
+        # Crear labels con provincia y monto
+        df_provincias_monto['label_texto'] = df_provincias_monto.apply(
+            lambda row: f"{row['provincia']}<br>₡{row['monto_total']:,.0f}",
+            axis=1
+        )
+
         # Escala de colores oscuros mejorada para legibilidad
         color_scale = [
             [0.0, 'rgb(158, 202, 225)'],  # Azul claro para mínimo
@@ -408,19 +572,20 @@ with col_right:
         ]
 
         fig_treemap = px.treemap(
-            df_provincias,
+            df_provincias_monto,
             path=['provincia'],
             values='num_ventas',
             color='num_ventas',
             color_continuous_scale=color_scale,
             title='Distribución de Ventas por Provincia',
-            custom_data=['num_ventas']
+            custom_data=['num_ventas', 'monto_total']
         )
 
         fig_treemap.update_traces(
-            textfont=dict(size=14, color='white', family='Arial Black'),
+            textfont=dict(size=12, color='white', family='Arial Black'),
             marker=dict(line=dict(width=2, color='white')),
-            hovertemplate='<b>%{label}</b><br>Ventas: %{customdata[0]:,}<extra></extra>'
+            texttemplate='<b>%{label}</b><br>₡%{customdata[1]:,.0f}',
+            hovertemplate='<b>%{label}</b><br>Cantidad: %{customdata[0]:,}<br>Monto: ₡%{customdata[1]:,.0f}<extra></extra>'
         )
 
         fig_treemap.update_layout(
@@ -430,21 +595,29 @@ with col_right:
 
         st.plotly_chart(fig_treemap, use_container_width=True)
 
-    # Ventas por almacén
+    # Ventas por almacén (barras verticales)
     df_almacenes = kpi_calc.calcular_ventas_por_almacen()
 
     if not df_almacenes.empty:
-        fig_almacenes = px.bar(
-            df_almacenes,
-            x='nombre_almacen',
-            y='num_ventas',
-            title='Órdenes por Almacén (Bodega)',
-            color='num_ventas',
-            color_continuous_scale='Blues',
-            labels={'num_ventas': 'Cantidad de Órdenes', 'nombre_almacen': 'Almacén'}
-        )
+        # Ordenar por cantidad descendente
+        df_almacenes_sorted = df_almacenes.sort_values('num_ventas', ascending=False)
+
+        fig_almacenes = go.Figure()
+
+        fig_almacenes.add_trace(go.Bar(
+            x=df_almacenes_sorted['nombre_almacen'],
+            y=df_almacenes_sorted['num_ventas'],
+            marker_color=COLORES[0],
+            text=df_almacenes_sorted['num_ventas'],
+            texttemplate='%{text:,}',
+            textposition='outside',
+            hovertemplate='<b>%{x}</b><br>Órdenes: %{y:,}<extra></extra>'
+        ))
 
         fig_almacenes.update_layout(
+            title='Órdenes por Almacén (Bodega)',
+            xaxis_title='Almacén',
+            yaxis_title='Cantidad de Órdenes',
             height=250,
             margin=dict(l=20, r=20, t=40, b=20),
             showlegend=False
