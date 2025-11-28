@@ -157,7 +157,7 @@ st.markdown("---")
 # SECCIÓN 2: BALANCED SCORECARD
 # ============================================================================
 
-st.markdown("## 🎯 Balanced Scorecard")
+st.markdown("## Balanced Scorecard")
 
 # Crear 2x2 grid para las 4 perspectivas
 col_left, col_right = st.columns(2)
