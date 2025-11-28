@@ -72,68 +72,126 @@ class CuboOLAP:
     # ========================================================================
 
     def slice(self, dimension: str, value: any, measure: str = "monto_total") -> pd.DataFrame:
-        """SLICE: Selecciona un subrectángulo del cubo fijando una dimensión"""
+        """SLICE: Selecciona un subrectángulo del cubo fijando una dimensión (con agrupación correcta por venta_id)"""
         logger.info(f"SLICE: {dimension} = {value}")
 
         dimension_queries = {
             'provincia': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.provincia_id,
+                        fv.canton_id,
+                        fv.distrito_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta,
+                        SUM(fv.impuesto) AS impuesto_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+                )
                 SELECT
                     g.provincia AS dimension_value,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS cantidad_transacciones,
-                    SUM(fv.cantidad) AS total_cantidad,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                    SUM(fv.impuesto) AS total_impuesto
-                FROM fact_ventas fv
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_por_orden,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    SUM(va.impuesto_venta) AS total_impuesto
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                    AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
                 WHERE g.provincia = ?
                 GROUP BY g.provincia
             """,
             'categoria': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.producto_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta,
+                        SUM(fv.impuesto) AS impuesto_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.producto_id, fv.cliente_id
+                )
                 SELECT
                     pr.categoria AS dimension_value,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS cantidad_transacciones,
-                    SUM(fv.cantidad) AS total_cantidad,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                    SUM(fv.impuesto) AS total_impuesto
-                FROM fact_ventas fv
-                INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_por_orden,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    SUM(va.impuesto_venta) AS total_impuesto
+                FROM VentasAgrupadas va
+                INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
                 WHERE pr.categoria = ?
                 GROUP BY pr.categoria
             """,
             'almacen': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.almacen_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta,
+                        SUM(fv.impuesto) AS impuesto_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.almacen_id, fv.cliente_id
+                )
                 SELECT
                     a.nombre_almacen AS dimension_value,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS cantidad_transacciones,
-                    SUM(fv.cantidad) AS total_cantidad,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                    SUM(fv.impuesto) AS total_impuesto
-                FROM fact_ventas fv
-                INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_por_orden,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    SUM(va.impuesto_venta) AS total_impuesto
+                FROM VentasAgrupadas va
+                INNER JOIN dim_almacen a ON va.almacen_id = a.almacen_id
                 WHERE a.nombre_almacen = ?
                 GROUP BY a.nombre_almacen
             """,
             'anio': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta,
+                        SUM(fv.impuesto) AS impuesto_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key, fv.cliente_id
+                )
                 SELECT
                     CAST(t.ANIO_CAL AS NVARCHAR) AS dimension_value,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS cantidad_transacciones,
-                    SUM(fv.cantidad) AS total_cantidad,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                    SUM(fv.impuesto) AS total_impuesto
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_por_orden,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    SUM(va.impuesto_venta) AS total_impuesto
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 WHERE t.ANIO_CAL = ?
                 GROUP BY t.ANIO_CAL
             """
@@ -143,6 +201,118 @@ class CuboOLAP:
             raise ValueError(f"Dimensión no soportada: {dimension}")
 
         return self._execute_query(dimension_queries[dimension], (value,))
+
+    def slice_drill_down(self, dimension: str, value: any) -> pd.DataFrame:
+        """Obtiene el desglose detallado después de aplicar SLICE para mostrar en gráficos"""
+        logger.info(f"SLICE Drill-Down: {dimension} = {value}")
+
+        drill_down_queries = {
+            'provincia': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.provincia_id,
+                        fv.canton_id,
+                        fv.distrito_id,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id
+                )
+                SELECT TOP 15
+                    g.canton,
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    SUM(va.monto_venta) AS total_ventas,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                    AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
+                WHERE g.provincia = ?
+                GROUP BY g.canton
+                ORDER BY SUM(va.monto_venta) DESC
+            """,
+            'categoria': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.producto_id,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta,
+                        SUM(fv.cantidad) AS cantidad
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.producto_id
+                )
+                SELECT TOP 15
+                    pr.nombre_producto AS producto,
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    SUM(va.cantidad) AS unidades_vendidas,
+                    SUM(va.monto_venta) AS total_ventas,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
+                WHERE pr.categoria = ?
+                GROUP BY pr.nombre_producto
+                ORDER BY SUM(va.monto_venta) DESC
+            """,
+            'almacen': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.almacen_id,
+                        fv.producto_id,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.almacen_id, fv.producto_id
+                )
+                SELECT TOP 15
+                    pr.categoria,
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    SUM(va.monto_venta) AS total_ventas,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_almacen a ON va.almacen_id = a.almacen_id
+                INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
+                WHERE a.nombre_almacen = ?
+                GROUP BY pr.categoria
+                ORDER BY SUM(va.monto_venta) DESC
+            """,
+            'anio': """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
+                SELECT
+                    t.MES_NOMBRE AS mes,
+                    t.MES_CAL AS mes_numero,
+                    COUNT(DISTINCT va.venta_id) AS cantidad_ordenes,
+                    SUM(va.monto_venta) AS total_ventas,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+                WHERE t.ANIO_CAL = ?
+                GROUP BY t.MES_NOMBRE, t.MES_CAL
+                ORDER BY t.MES_CAL
+            """
+        }
+
+        if dimension not in drill_down_queries:
+            raise ValueError(f"Dimensión no soportada: {dimension}")
+
+        return self._execute_query(drill_down_queries[dimension], (value,))
 
     def dice(self, filters: Dict[str, any]) -> pd.DataFrame:
         """DICE: Selecciona subrectángulo del cubo con múltiples filtros"""
@@ -597,19 +767,139 @@ class CuboOLAP:
 
         query = """
             SELECT
-                COUNT(DISTINCT fv.venta_detalle_key) AS total_transacciones,
-                COUNT(DISTINCT fv.cliente_id) AS clientes_unicos,
-                COUNT(DISTINCT fv.producto_id) AS productos_vendidos,
-                COUNT(DISTINCT fv.almacen_id) AS almacenes_activos,
-                SUM(fv.cantidad) AS total_unidades,
-                SUM(fv.monto_total) AS total_ventas,
-                SUM(fv.monto_total - (fv.cantidad * fv.costo_unitario)) AS total_ganancia,
-                AVG(fv.monto_total) AS promedio_venta,
-                MIN(fv.monto_total) AS venta_minima,
-                MAX(fv.monto_total) AS venta_maxima,
-                SUM(fv.margen) AS total_margen,
-                ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje
-            FROM fact_ventas fv
+                -- Ventas completadas (agrupadas por venta_id)
+                (SELECT COUNT(DISTINCT venta_id)
+                 FROM (
+                     SELECT venta_id
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS total_transacciones,
+
+                (SELECT SUM(total_unidades)
+                 FROM (
+                     SELECT venta_id, SUM(cantidad) AS total_unidades
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS total_unidades,
+
+                (SELECT SUM(MontoFactura)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS total_ventas_sin_canceladas,
+
+                (SELECT SUM(MargenFactura)
+                 FROM (
+                     SELECT venta_id, SUM(margen) AS MargenFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS total_ganancia,
+
+                (SELECT AVG(MontoFactura)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS promedio_venta,
+
+                (SELECT MIN(MontoFactura)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS venta_minima,
+
+                (SELECT MAX(MontoFactura)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS venta_maxima,
+
+                (SELECT SUM(MargenFactura)
+                 FROM (
+                     SELECT venta_id, SUM(margen) AS MargenFactura
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 0
+                     GROUP BY venta_id
+                 ) AS vc
+                ) AS total_margen,
+
+                ROUND(100.0 *
+                    (SELECT SUM(MargenFactura)
+                     FROM (
+                         SELECT venta_id, SUM(margen) AS MargenFactura
+                         FROM fact_ventas
+                         WHERE venta_cancelada = 0
+                         GROUP BY venta_id
+                     ) AS vc
+                    ) /
+                    NULLIF((SELECT SUM(MontoFactura)
+                     FROM (
+                         SELECT venta_id, SUM(monto_total) AS MontoFactura
+                         FROM fact_ventas
+                         WHERE venta_cancelada = 0
+                         GROUP BY venta_id
+                     ) AS vc
+                    ), 0), 2) AS margen_porcentaje,
+
+                (SELECT COUNT(DISTINCT cliente_id)
+                 FROM fact_ventas
+                 WHERE venta_cancelada = 0
+                ) AS clientes_unicos,
+
+                (SELECT COUNT(DISTINCT producto_id)
+                 FROM fact_ventas
+                 WHERE venta_cancelada = 0
+                ) AS productos_vendidos,
+
+                (SELECT COUNT(DISTINCT almacen_id)
+                 FROM fact_ventas
+                 WHERE venta_cancelada = 0
+                ) AS almacenes_activos,
+
+                -- Ventas canceladas
+                (SELECT COUNT(DISTINCT venta_id)
+                 FROM (
+                     SELECT venta_id
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 1
+                     GROUP BY venta_id
+                 ) AS vcn
+                ) AS cantidad_canceladas,
+
+                ISNULL((SELECT SUM(MontoFacturaCancelada)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoFacturaCancelada
+                     FROM fact_ventas
+                     WHERE venta_cancelada = 1
+                     GROUP BY venta_id
+                 ) AS vcn
+                ), 0) AS monto_canceladas,
+
+                -- Total general (todas las ventas agrupadas por venta_id)
+                (SELECT SUM(MontoTotal)
+                 FROM (
+                     SELECT venta_id, SUM(monto_total) AS MontoTotal
+                     FROM fact_ventas
+                     GROUP BY venta_id
+                 ) AS tv
+                ) AS total_ventas_con_canceladas
         """
 
         result = self._execute_query(query)

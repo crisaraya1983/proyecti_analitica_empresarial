@@ -30,7 +30,7 @@ st.set_page_config(
     page_title="Cubo OLAP",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Inicializar componentes y estilos
@@ -122,150 +122,130 @@ def ejecutar_pivot(_cubo, rows, columns, values):
     """Ejecuta operación PIVOT (cached 5min)"""
     return _cubo.pivot(rows, columns, values)
 
-# ============================================================================
-# SIDEBAR
-# ============================================================================
-
-with st.sidebar:
-    st.header("Configuración")
-
-    if st.button("Probar Conexión DW", use_container_width=True):
-        with st.spinner("Probando conexión..."):
-            try:
-                result = DatabaseConnection.test_connection("Ecommerce_DW", use_secrets=True)
-                if result["success"]:
-                    st.success("Conexión exitosa")
-                else:
-                    st.error(f"Error: {result['error']}")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-
-    st.markdown("---")
-
-    st.subheader("Operaciones OLAP")
-    st.markdown("""
-    **SLICE**: Filtro por una dimensión
-    **DICE**: Filtros múltiples
-    **DRILL-DOWN**: Mayor detalle
-    **ROLL-UP**: Mayor agregación
-    **PIVOT**: Rotar dimensiones
-    """)
-
-    st.markdown("---")
-    st.caption(f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+@st.cache_data(ttl=300)
+def ejecutar_slice_drill_down(_cubo, dimension, value):
+    """Ejecuta drill-down para SLICE (cached 5min)"""
+    return _cubo.slice_drill_down(dimension, value)
 
 # Obtener cubo OLAP
 cubo = get_olap_cube()
 
 # ============================================================================
+# MÉTRICAS GLOBALES (RESUMEN EJECUTIVO)
+# ============================================================================
+
+with st.spinner("Cargando métricas globales..."):
+    try:
+        resumen = get_resumen_negocio(cubo)
+
+        if resumen:
+            # Primera fila: 4 métricas principales
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric(
+                    "Total Ventas (con canceladas)",
+                    f"₡{resumen.get('total_ventas_con_canceladas', 0):,.2f}",
+                    help="Monto total de todas las ventas incluyendo canceladas"
+                )
+
+            with col2:
+                st.metric(
+                    "Ganancia Total",
+                    f"₡{resumen.get('total_ganancia', 0):,.2f}",
+                    help=f"{resumen.get('margen_porcentaje', 0):.2f}% margen (sin canceladas)"
+                )
+
+            with col3:
+                st.metric(
+                    "Cantidad Ventas Totales",
+                    f"{resumen.get('total_transacciones', 0):,}",
+                    help="Número total de ventas completadas"
+                )
+
+            with col4:
+                st.metric(
+                    "Total Ventas (sin canceladas)",
+                    f"₡{resumen.get('total_ventas_sin_canceladas', 0):,.2f}",
+                    help="Monto de ventas excluyendo cancelaciones"
+                )
+
+            # Segunda fila: 4 métricas adicionales
+            col5, col6, col7, col8 = st.columns(4)
+
+            with col5:
+                st.metric(
+                    "Total Ordenes Canceladas",
+                    f"{resumen.get('cantidad_canceladas', 0):,}",
+                    help="Número de órdenes canceladas"
+                )
+
+            with col6:
+                st.metric(
+                    "Monto Cancelaciones",
+                    f"₡{resumen.get('monto_canceladas', 0):,.2f}",
+                    help="Monto total de ventas canceladas"
+                )
+
+            with col7:
+                st.metric(
+                    "Promedio por Venta",
+                    f"₡{resumen.get('promedio_venta', 0):,.2f}",
+                    help=f"₡{resumen.get('venta_maxima', 0):,.2f} máx"
+                )
+
+            with col8:
+                st.metric(
+                    "Clientes Únicos",
+                    f"{resumen.get('clientes_unicos', 0):,}",
+                    help=f"{resumen.get('productos_vendidos', 0):,} productos"
+                )
+
+            st.markdown("---")
+
+        else:
+            st.warning("No hay datos disponibles")
+
+    except Exception as e:
+        st.error(f"Error cargando métricas: {str(e)}")
+
+# ============================================================================
 # TABS PRINCIPALES
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Resumen Ejecutivo",
-    "SLICE",
-    "DICE",
-    "Análisis Dimensional",
-    "PIVOT",
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Enfoque de Negocio",
+    "Análisis Multidimensional",
+    "Drill-Down / Roll-Up",
+    "Tablas Dinámicas",
     "Comportamiento Web"
 ])
 
 # ============================================================================
-# TAB 1: RESUMEN EJECUTIVO
+# TAB 1: ENFOQUE DE NEGOCIO (antes SLICE)
 # ============================================================================
 
 with tab1:
     crear_seccion_encabezado(
-        "Resumen Ejecutivo del Negocio",
-        "KPIs principales y métricas de desempeño",
-        #badge="RESUMEN"
+        "Enfoque de Negocio",
+        "Análisis focalizado en una dimensión específica del negocio"
     )
 
     try:
-        with st.spinner("Cargando datos..."):
-            resumen = get_resumen_negocio(cubo)
+        col1, col2 = st.columns([1, 1])
 
-            if resumen:
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    st.metric(
-                        "Total Ventas",
-                        f"₡{resumen.get('total_ventas', 0):,.2f}",
-                        delta=f"{resumen.get('total_transacciones', 0):,} transacciones"
-                    )
-
-                with col2:
-                    st.metric(
-                        "Ganancia Total",
-                        f"₡{resumen.get('total_ganancia', 0):,.2f}",
-                        delta=f"{resumen.get('margen_porcentaje', 0):.2f}% margen"
-                    )
-
-                with col3:
-                    st.metric(
-                        "Clientes Únicos",
-                        f"{resumen.get('clientes_unicos', 0):,}",
-                        delta=f"{resumen.get('productos_vendidos', 0):,} productos"
-                    )
-
-                with col4:
-                    st.metric(
-                        "Promedio por Venta",
-                        f"₡{resumen.get('promedio_venta', 0):,.2f}",
-                        delta=f"₡{resumen.get('venta_maxima', 0):,.2f} máx"
-                    )
-
-                st.markdown("---")
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.info(f"""
-                    **Estadísticas de Ventas**
-                    Total Transacciones: {resumen.get('total_transacciones', 0):,}
-                    Total Unidades: {resumen.get('total_unidades', 0):,}
-                    Venta Mínima: ₡{resumen.get('venta_minima', 0):,.2f}
-                    Venta Máxima: ₡{resumen.get('venta_maxima', 0):,.2f}
-                    """)
-
-                with col2:
-                    st.success(f"""
-                    **Rentabilidad**
-                    Total Margen: ₡{resumen.get('total_margen', 0):,.2f}
-                    Margen Porcentaje: {resumen.get('margen_porcentaje', 0):.2f}%
-                    Almacenes Activos: {resumen.get('almacenes_activos', 0)}
-                    """)
-
-                st.markdown("---")
-                st.subheader("Tabla de Resumen Completo")
-                df_resumen = pd.DataFrame([resumen])
-                st.dataframe(df_resumen, use_container_width=True)
-
-            else:
-                st.warning("No hay datos disponibles")
-
-    except Exception as e:
-        st.error(f"Error cargando resumen: {str(e)}")
-
-# ============================================================================
-# TAB 2: SLICE
-# ============================================================================
-
-with tab2:
-    crear_seccion_encabezado(
-        "Operación SLICE",
-        "Filtrar datos por una dimensión específica",
-        #badge="OLAP"
-    )
-
-    try:
-        col1, col2 = st.columns(2)
+        dimension_labels = {
+            'provincia': 'Región Geográfica',
+            'categoria': 'Categoría de Producto',
+            'almacen': 'Almacén/Tienda',
+            'anio': 'Año Fiscal'
+        }
 
         with col1:
             dimension = st.selectbox(
-                "Selecciona la dimensión",
-                ["provincia", "categoria", "almacen", "anio"],
+                "Dimensión de Análisis",
+                list(dimension_labels.keys()),
+                format_func=lambda x: dimension_labels[x],
                 key="slice_dim"
             )
 
@@ -280,50 +260,149 @@ with tab2:
             elif dimension == "anio":
                 query = "SELECT DISTINCT ANIO_CAL FROM dim_tiempo ORDER BY ANIO_CAL DESC"
 
-            cursor = cubo.conn.cursor()
-            cursor.execute(query)
-            valores = [str(row[0]) for row in cursor.fetchall()]
-            cursor.close()
+            df_valores = pd.read_sql(query, cubo.conn)
+            valores = [str(row) for row in df_valores.iloc[:, 0].tolist()]
 
-            valor_seleccionado = st.selectbox("Selecciona el valor", valores, key="slice_val")
+            valor_seleccionado = st.selectbox(
+                f"Seleccionar {dimension_labels[dimension]}",
+                valores,
+                key="slice_val"
+            )
 
-        if st.button("Ejecutar SLICE", use_container_width=True):
-            with st.spinner(f"Ejecutando SLICE: {dimension} = {valor_seleccionado}..."):
+        if st.button("Analizar", use_container_width=True, type="primary"):
+            with st.spinner(f"Analizando {dimension_labels[dimension]}: {valor_seleccionado}..."):
                 try:
-                    df = ejecutar_slice(cubo, dimension, valor_seleccionado)
+                    # Obtener datos resumidos
+                    df_resumen = ejecutar_slice(cubo, dimension, valor_seleccionado)
 
-                    if not df.empty:
-                        st.success("SLICE ejecutado exitosamente")
-                        st.dataframe(df, use_container_width=True)
+                    if not df_resumen.empty:
+                        row = df_resumen.iloc[0]
 
-                        if 'total_ventas' in df.columns and 'dimension_value' in df.columns:
-                            fig = px.bar(
-                                df,
-                                x='dimension_value',
-                                y='total_ventas',
-                                title=f'Ventas por {dimension}',
-                                labels={'total_ventas': 'Total Ventas (₡)'},
-                                color='margen_porcentaje'
+                        # Mostrar KPIs principales en métricas
+                        st.markdown("### Indicadores Clave")
+                        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+
+                        with col_m1:
+                            st.metric(
+                                "Órdenes Completadas",
+                                f"{row.get('cantidad_ordenes', 0):,}",
+                                help="Número total de órdenes completadas"
                             )
-                            st.plotly_chart(fig, use_container_width=True)
+
+                        with col_m2:
+                            st.metric(
+                                "Ingresos Totales",
+                                f"₡{row.get('total_ventas', 0):,.2f}",
+                                help="Monto total de ventas"
+                            )
+
+                        with col_m3:
+                            st.metric(
+                                "Margen",
+                                f"{row.get('margen_porcentaje', 0):.2f}%",
+                                help="Porcentaje de margen de ganancia"
+                            )
+
+                        with col_m4:
+                            st.metric(
+                                "Clientes Únicos",
+                                f"{row.get('clientes_unicos', 0):,}",
+                                help="Número de clientes distintos"
+                            )
+
+                        st.markdown("---")
+
+                        # Obtener desglose detallado
+                        df_drill = ejecutar_slice_drill_down(cubo, dimension, valor_seleccionado)
+
+                        if not df_drill.empty:
+                            st.markdown("### Desglose Detallado")
+
+                            col_chart, col_table = st.columns([3, 2])
+
+                            with col_chart:
+                                # Determinar qué mostrar según la dimensión
+                                if dimension == "provincia":
+                                    x_col, title = 'canton', f'Top 15 Cantones en {valor_seleccionado}'
+                                elif dimension == "categoria":
+                                    x_col, title = 'producto', f'Top 15 Productos en {valor_seleccionado}'
+                                elif dimension == "almacen":
+                                    x_col, title = 'categoria', f'Categorías en {valor_seleccionado}'
+                                elif dimension == "anio":
+                                    x_col, title = 'mes', f'Evolución Mensual - {valor_seleccionado}'
+
+                                fig = go.Figure()
+                                fig.add_trace(go.Bar(
+                                    x=df_drill[x_col],
+                                    y=df_drill['total_ventas'],
+                                    name='Ventas',
+                                    marker_color='#3498db',
+                                    hovertemplate='<b>%{x}</b><br>Ventas: ₡%{y:,.2f}<extra></extra>'
+                                ))
+
+                                fig.update_layout(
+                                    title=title,
+                                    xaxis_title='',
+                                    yaxis_title='Ingresos (₡)',
+                                    height=400,
+                                    showlegend=False
+                                )
+
+                                if dimension != 'anio':
+                                    fig.update_xaxes(tickangle=-45)
+
+                                st.plotly_chart(fig, use_container_width=True)
+
+                            with col_table:
+                                st.markdown("**Resumen Numérico**")
+                                # Mostrar tabla con formato
+                                df_display = df_drill.copy()
+                                if 'total_ventas' in df_display.columns:
+                                    df_display['total_ventas'] = df_display['total_ventas'].apply(lambda x: f"₡{x:,.2f}")
+                                if 'total_margen' in df_display.columns:
+                                    df_display['total_margen'] = df_display['total_margen'].apply(lambda x: f"₡{x:,.2f}")
+                                if 'margen_porcentaje' in df_display.columns:
+                                    df_display['margen_porcentaje'] = df_display['margen_porcentaje'].apply(lambda x: f"{x:.2f}%")
+
+                                st.dataframe(df_display, use_container_width=True, height=370)
+
+                        st.markdown("---")
+
+                        # Tabla de resumen completo
+                        with st.expander("Ver Datos Detallados"):
+                            df_resumen_display = df_resumen.copy()
+                            # Formatear columnas numéricas
+                            for col in df_resumen_display.columns:
+                                if col == 'dimension_value':
+                                    continue  # Mantener dimensión sin formato
+                                elif 'porcentaje' in col.lower() or 'margen_porcentaje' == col:
+                                    df_resumen_display[col] = df_resumen_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
+                                elif df_resumen_display[col].dtype in ['float64', 'int64']:
+                                    # Formatear con separador de miles
+                                    df_resumen_display[col] = df_resumen_display[col].apply(
+                                        lambda x: f"{x:,.2f}" if isinstance(x, float) else f"{x:,}" if pd.notna(x) else ""
+                                    )
+                            st.dataframe(df_resumen_display, use_container_width=True)
+
                     else:
-                        st.warning("No hay datos para este filtro")
+                        st.warning("No hay datos disponibles para esta selección")
 
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    st.error(f"Error durante el análisis: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
 
 # ============================================================================
-# TAB 3: DICE
+# TAB 2: ANÁLISIS MULTIDIMENSIONAL (antes DICE)
 # ============================================================================
 
-with tab3:
+with tab2:
     crear_seccion_encabezado(
-        "Operación DICE",
-        "Aplicar filtros en múltiples dimensiones simultáneamente",
-        #badge="OLAP"
+        "Análisis Multidimensional",
+        "Filtros avanzados para análisis combinado de múltiples dimensiones"
     )
 
     try:
@@ -335,10 +414,8 @@ with tab3:
 
         with col1:
             query = "SELECT DISTINCT provincia FROM dim_geografia ORDER BY provincia"
-            cursor = cubo.conn.cursor()
-            cursor.execute(query)
-            provincias = ['TODAS'] + [row[0] for row in cursor.fetchall()]
-            cursor.close()
+            df_prov = pd.read_sql(query, cubo.conn)
+            provincias = ['TODAS'] + df_prov['provincia'].tolist()
 
             prov_sel = st.selectbox("Provincia", provincias, key="dice_prov")
             if prov_sel != 'TODAS':
@@ -346,10 +423,8 @@ with tab3:
 
         with col2:
             query = "SELECT DISTINCT categoria FROM dim_producto ORDER BY categoria"
-            cursor = cubo.conn.cursor()
-            cursor.execute(query)
-            categorias = ['TODAS'] + [row[0] for row in cursor.fetchall()]
-            cursor.close()
+            df_cat = pd.read_sql(query, cubo.conn)
+            categorias = ['TODAS'] + df_cat['categoria'].tolist()
 
             cat_sel = st.selectbox("Categoría", categorias, key="dice_cat")
             if cat_sel != 'TODAS':
@@ -357,10 +432,8 @@ with tab3:
 
         with col3:
             query = "SELECT DISTINCT ANIO_CAL FROM dim_tiempo ORDER BY ANIO_CAL DESC"
-            cursor = cubo.conn.cursor()
-            cursor.execute(query)
-            anios = ['TODOS'] + [str(row[0]) for row in cursor.fetchall()]
-            cursor.close()
+            df_anio = pd.read_sql(query, cubo.conn)
+            anios = ['TODOS'] + [str(int(a)) for a in df_anio['ANIO_CAL'].tolist()]
 
             anio_sel = st.selectbox("Año", anios, key="dice_anio")
             if anio_sel != 'TODOS':
@@ -370,11 +443,8 @@ with tab3:
 
         with col1:
             query = "SELECT DISTINCT MES_CAL, MES_NOMBRE FROM dim_tiempo ORDER BY MES_CAL"
-            cursor = cubo.conn.cursor()
-            cursor.execute(query)
-            meses_data = cursor.fetchall()
-            cursor.close()
-            meses = ['TODOS'] + [f"{row[1]} ({row[0]})" for row in meses_data]
+            df_meses = pd.read_sql(query, cubo.conn)
+            meses = ['TODOS'] + [f"{row['MES_NOMBRE']} ({int(row['MES_CAL'])})" for _, row in df_meses.iterrows()]
 
             mes_sel = st.selectbox("Mes", meses, key="dice_mes")
             if mes_sel != 'TODOS':
@@ -414,7 +484,7 @@ with tab3:
 # TAB 4: ANÁLISIS DIMENSIONAL
 # ============================================================================
 
-with tab4:
+with tab3:
     crear_seccion_encabezado(
         "Análisis Dimensional",
         "DRILL-DOWN: aumentar detalle | ROLL-UP: aumentar agregación",
@@ -609,7 +679,7 @@ with tab4:
 # TAB 5: PIVOT
 # ============================================================================
 
-with tab5:
+with tab4:
     crear_seccion_encabezado(
         "Operación PIVOT",
         "Rotar dimensiones para diferentes vistas tabulares",
@@ -671,7 +741,7 @@ with tab5:
 # TAB 6: COMPORTAMIENTO WEB
 # ============================================================================
 
-with tab6:
+with tab5:
     crear_seccion_encabezado(
         "Análisis de Comportamiento Web",
         "Eventos, búsquedas y funnel de conversión",
