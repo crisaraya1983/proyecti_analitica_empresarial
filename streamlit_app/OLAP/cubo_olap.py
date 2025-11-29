@@ -541,10 +541,25 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def pivot(self, rows: str, columns: str, values: str = "monto_total") -> pd.DataFrame:
-        """PIVOT: Rota dimensiones para diferentes vistas tabulares"""
+        """PIVOT: Rota dimensiones para diferentes vistas tabulares (con agrupación correcta por venta_id)"""
         logger.info(f"PIVOT: filas={rows}, columnas={columns}, valores={values}")
 
         query = """
+            WITH VentasAgrupadas AS (
+                SELECT
+                    fv.venta_id,
+                    fv.tiempo_key,
+                    fv.producto_id,
+                    fv.provincia_id,
+                    fv.canton_id,
+                    fv.distrito_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.tiempo_key, fv.producto_id, fv.provincia_id, fv.canton_id, fv.distrito_id
+            )
             SELECT
                 g.provincia,
                 g.canton,
@@ -553,15 +568,15 @@ class CuboOLAP:
                 t.ANIO_CAL AS anio,
                 t.MES_CAL AS mes,
                 t.MES_NOMBRE AS mes_nombre,
-                SUM(fv.monto_total) AS monto_total,
-                SUM(fv.margen) AS margen,
-                COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                SUM(fv.cantidad) AS cantidad
-            FROM fact_ventas fv
-            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-            INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
-            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                SUM(va.monto_venta) AS monto_total,
+                SUM(va.margen_venta) AS margen,
+                COUNT(DISTINCT va.venta_id) AS transacciones,
+                SUM(va.total_unidades) AS cantidad
+            FROM VentasAgrupadas va
+            INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
+            INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
             GROUP BY g.provincia, g.canton, g.distrito, pr.categoria, t.ANIO_CAL, t.MES_CAL, t.MES_NOMBRE
         """
 
@@ -581,68 +596,116 @@ class CuboOLAP:
     # ========================================================================
 
     def get_ventas_por_tiempo(self, granularidad: str = 'mes') -> pd.DataFrame:
-        """Ventas agregadas por período de tiempo"""
+        """Ventas agregadas por período de tiempo (con agrupación correcta por venta_id)"""
         logger.info(f"Ventas por tiempo (granularidad: {granularidad})")
 
         if granularidad == 'anio':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS periodo,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    SUM(fv.cantidad) AS total_unidades
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    SUM(va.total_unidades) AS total_unidades,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL
                 ORDER BY t.ANIO_CAL DESC
             """
         elif granularidad == 'trimestre':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS anio,
                     t.TRIMESTRE AS trimestre,
                     CAST(CONCAT(t.ANIO_CAL, '-T', t.TRIMESTRE) AS NVARCHAR(10)) AS periodo,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    SUM(fv.cantidad) AS total_unidades
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    SUM(va.total_unidades) AS total_unidades,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL, t.TRIMESTRE
                 ORDER BY t.ANIO_CAL DESC, t.TRIMESTRE DESC
             """
         elif granularidad == 'mes':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS anio,
                     t.MES_CAL AS mes,
                     t.MES_NOMBRE AS mes_nombre,
                     CAST(CONCAT(t.ANIO_CAL, '-', RIGHT(CONCAT('0', t.MES_CAL), 2)) AS NVARCHAR(7)) AS periodo,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    SUM(fv.cantidad) AS total_unidades
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    SUM(va.total_unidades) AS total_unidades,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL, t.MES_CAL, t.MES_NOMBRE
                 ORDER BY t.ANIO_CAL DESC, t.MES_CAL DESC
             """
         elif granularidad == 'dia':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.FECHA_CAL AS fecha,
                     t.DIA_SEM_NOMBRE AS dia_semana,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    SUM(fv.cantidad) AS total_unidades
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    SUM(va.total_unidades) AS total_unidades,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.FECHA_CAL, t.DIA_SEM_NOMBRE
                 ORDER BY t.FECHA_CAL DESC
             """
@@ -652,23 +715,35 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_categoria(self) -> pd.DataFrame:
-        """Ventas por categoría de producto"""
+        """Ventas por categoría de producto (con agrupación correcta por venta_id)"""
         logger.info("Ventas por categoría")
 
         query = """
+            WITH VentasAgrupadas AS (
+                SELECT
+                    fv.venta_id,
+                    fv.producto_id,
+                    fv.cliente_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.producto_id, fv.cliente_id
+            )
             SELECT
                 pr.categoria,
-                COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                SUM(fv.cantidad) AS total_unidades,
-                SUM(fv.monto_total) AS total_ventas,
-                AVG(fv.monto_total) AS promedio_venta,
-                MIN(fv.monto_total) AS venta_minima,
-                MAX(fv.monto_total) AS venta_maxima,
-                SUM(fv.margen) AS total_margen,
-                ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                COUNT(DISTINCT fv.cliente_id) AS clientes_unicos
-            FROM fact_ventas fv
-            INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
+                COUNT(DISTINCT va.venta_id) AS transacciones,
+                SUM(va.total_unidades) AS total_unidades,
+                SUM(va.monto_venta) AS total_ventas,
+                AVG(va.monto_venta) AS promedio_venta,
+                MIN(va.monto_venta) AS venta_minima,
+                MAX(va.monto_venta) AS venta_maxima,
+                SUM(va.margen_venta) AS total_margen,
+                ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                COUNT(DISTINCT va.cliente_id) AS clientes_unicos
+            FROM VentasAgrupadas va
+            INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
             GROUP BY pr.categoria
             ORDER BY total_ventas DESC
         """
@@ -676,57 +751,102 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_region(self, nivel: str = 'provincia') -> pd.DataFrame:
-        """Ventas por región geográfica"""
+        """Ventas por región geográfica (con agrupación correcta por venta_id)"""
         logger.info(f"Ventas por región (nivel: {nivel})")
 
         if nivel == 'provincia':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.provincia_id,
+                        fv.canton_id,
+                        fv.distrito_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+                )
                 SELECT
                     g.provincia,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.cantidad) AS total_unidades,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    COUNT(DISTINCT fv.cliente_id) AS clientes_unicos
-                FROM fact_ventas fv
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                    AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
                 GROUP BY g.provincia
                 ORDER BY total_ventas DESC
             """
         elif nivel == 'canton':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.provincia_id,
+                        fv.canton_id,
+                        fv.distrito_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+                )
                 SELECT
                     g.provincia,
                     g.canton,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.cantidad) AS total_unidades,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    COUNT(DISTINCT fv.cliente_id) AS clientes_unicos
-                FROM fact_ventas fv
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                    AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
                 GROUP BY g.provincia, g.canton
                 ORDER BY total_ventas DESC
             """
         elif nivel == 'distrito':
             query = """
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.provincia_id,
+                        fv.canton_id,
+                        fv.distrito_id,
+                        fv.cliente_id,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta,
+                        SUM(fv.margen) AS margen_venta
+                    FROM fact_ventas fv
+                    WHERE fv.venta_cancelada = 0
+                    GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+                )
                 SELECT
                     g.provincia,
                     g.canton,
                     g.distrito,
-                    COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                    SUM(fv.cantidad) AS total_unidades,
-                    SUM(fv.monto_total) AS total_ventas,
-                    AVG(fv.monto_total) AS promedio_venta,
-                    SUM(fv.margen) AS total_margen,
-                    COUNT(DISTINCT fv.cliente_id) AS clientes_unicos
-                FROM fact_ventas fv
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    COUNT(DISTINCT va.venta_id) AS transacciones,
+                    SUM(va.total_unidades) AS total_unidades,
+                    SUM(va.monto_venta) AS total_ventas,
+                    AVG(va.monto_venta) AS promedio_venta,
+                    SUM(va.margen_venta) AS total_margen,
+                    ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                    COUNT(DISTINCT va.cliente_id) AS clientes_unicos
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                    AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
                 GROUP BY g.provincia, g.canton, g.distrito
                 ORDER BY total_ventas DESC
             """
@@ -736,22 +856,34 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_cliente(self, top_n: int = 20, segmento: str = None) -> pd.DataFrame:
-        """Top clientes"""
+        """Top clientes (con agrupación correcta por venta_id)"""
         logger.info(f"Top {top_n} clientes")
 
         query = f"""
+            WITH VentasAgrupadas AS (
+                SELECT
+                    fv.venta_id,
+                    fv.cliente_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.cliente_id
+            )
             SELECT TOP {top_n}
                 cl.cliente_id,
                 CONCAT(cl.nombre_cliente, ' ', cl.apellido_cliente) AS cliente,
                 cl.correo_electronico AS email,
-                COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                SUM(fv.cantidad) AS total_unidades,
-                SUM(fv.monto_total) AS total_gasto,
-                AVG(fv.monto_total) AS promedio_compra,
-                MAX(fv.monto_total) AS compra_maxima,
-                SUM(fv.margen) AS margen_generado
-            FROM fact_ventas fv
-            INNER JOIN dim_cliente cl ON fv.cliente_id = cl.cliente_id
+                COUNT(DISTINCT va.venta_id) AS transacciones,
+                SUM(va.total_unidades) AS total_unidades,
+                SUM(va.monto_venta) AS total_gasto,
+                AVG(va.monto_venta) AS promedio_compra,
+                MAX(va.monto_venta) AS compra_maxima,
+                SUM(va.margen_venta) AS margen_generado,
+                ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+            FROM VentasAgrupadas va
+            INNER JOIN dim_cliente cl ON va.cliente_id = cl.cliente_id
             GROUP BY cl.cliente_id, cl.nombre_cliente, cl.apellido_cliente, cl.correo_electronico
             ORDER BY total_gasto DESC
         """
@@ -759,23 +891,34 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def top_productos(self, top_n: int = 10) -> pd.DataFrame:
-        """Obtiene los N productos más vendidos"""
+        """Obtiene los N productos más vendidos (con agrupación correcta por venta_id)"""
         logger.info(f"Top {top_n} productos")
 
         query = f"""
+            WITH VentasAgrupadas AS (
+                SELECT
+                    fv.venta_id,
+                    fv.producto_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.producto_id
+            )
             SELECT TOP {top_n}
                 pr.producto_id,
                 pr.nombre_producto AS producto,
                 pr.categoria,
                 pr.precio_unitario,
                 pr.costo_unitario,
-                COUNT(DISTINCT fv.venta_detalle_key) AS transacciones,
-                SUM(fv.cantidad) AS total_unidades,
-                SUM(fv.monto_total) AS total_ventas,
-                ROUND(100.0 * SUM(fv.margen) / NULLIF(SUM(fv.monto_total), 0), 2) AS margen_porcentaje,
-                SUM(fv.margen) AS total_margen
-            FROM fact_ventas fv
-            INNER JOIN dim_producto pr ON fv.producto_id = pr.producto_id
+                COUNT(DISTINCT va.venta_id) AS transacciones,
+                SUM(va.total_unidades) AS total_unidades,
+                SUM(va.monto_venta) AS total_ventas,
+                ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+                SUM(va.margen_venta) AS total_margen
+            FROM VentasAgrupadas va
+            INNER JOIN dim_producto pr ON va.producto_id = pr.producto_id
             GROUP BY pr.producto_id, pr.nombre_producto, pr.categoria, pr.precio_unitario, pr.costo_unitario
             ORDER BY total_ventas DESC
         """

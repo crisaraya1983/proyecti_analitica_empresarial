@@ -101,11 +101,6 @@ def get_analisis_busquedas(_cubo):
     """Obtiene análisis de búsquedas (cached 10min)"""
     return _cubo.analisis_busquedas()
 
-@st.cache_data(ttl=600)
-def get_funnel_conversion(_cubo):
-    """Obtiene funnel de conversión (cached 10min)"""
-    return _cubo.get_funnel_conversion()
-
 @st.cache_data(ttl=300)
 def ejecutar_slice(_cubo, dimension, value):
     """Ejecuta operación SLICE (cached 5min)"""
@@ -116,11 +111,6 @@ def ejecutar_dice(_cubo, filters_tuple):
     """Ejecuta operación DICE (cached 5min)"""
     filters = dict(filters_tuple)
     return _cubo.dice(filters)
-
-@st.cache_data(ttl=300)
-def ejecutar_pivot(_cubo, rows, columns, values):
-    """Ejecuta operación PIVOT (cached 5min)"""
-    return _cubo.pivot(rows, columns, values)
 
 @st.cache_data(ttl=300)
 def ejecutar_slice_drill_down(_cubo, dimension, value):
@@ -213,11 +203,10 @@ with st.spinner("Cargando métricas globales..."):
 # TABS PRINCIPALES
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "Enfoque de Negocio",
     "Análisis Multidimensional",
-    "Drill-Down / Roll-Up",
-    "Tablas Dinámicas",
+    "Exploración Jerárquica",
     "Comportamiento Web"
 ])
 
@@ -554,15 +543,24 @@ with tab2:
                                 colores_años = ['#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c']
                                 colores_ganancia = ['#2ecc71', '#27ae60', '#16a085', '#d4ac0d', '#117a65']
 
-                                # Crear un DataFrame pivoteado para facilitar el stacking
-                                df_pivot = df_mes.pivot(index='mes_nombre', columns='anio', values='total_ventas').fillna(0)
-                                df_pivot_margen = df_mes.pivot(index='mes_nombre', columns='anio', values='total_margen').fillna(0)
+                                # Asegurar que tenemos mes_numero para ordenar correctamente
+                                # Crear etiqueta compuesta: "MES_NOMBRE (mes_numero)"
+                                df_mes['mes_label'] = df_mes['mes_nombre'] + ' (' + df_mes['mes'].astype(str) + ')'
 
-                                # Ordenar meses correctamente
-                                orden_meses = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-                                             'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
-                                df_pivot = df_pivot.reindex([m for m in orden_meses if m in df_pivot.index])
-                                df_pivot_margen = df_pivot_margen.reindex([m for m in orden_meses if m in df_pivot_margen.index])
+                                # Crear un DataFrame pivoteado para facilitar el stacking
+                                df_pivot = df_mes.pivot(index='mes', columns='anio', values='total_ventas').fillna(0)
+                                df_pivot_margen = df_mes.pivot(index='mes', columns='anio', values='total_margen').fillna(0)
+
+                                # Crear mapeo de mes número a nombre para el eje X
+                                mes_map = df_mes.groupby('mes')['mes_nombre'].first().to_dict()
+
+                                # Asegurar que están ordenados por número de mes
+                                df_pivot = df_pivot.sort_index()
+                                df_pivot_margen = df_pivot_margen.sort_index()
+
+                                # Convertir índice de número a nombre para visualización
+                                df_pivot.index = df_pivot.index.map(lambda x: mes_map.get(x, str(x)))
+                                df_pivot_margen.index = df_pivot_margen.index.map(lambda x: mes_map.get(x, str(x)))
 
                                 # Agregar barras apiladas por año
                                 for idx, año in enumerate(sorted(años_unicos)):
@@ -578,21 +576,25 @@ with tab2:
                                         ))
 
                                 # Agregar líneas de ganancia por año
-                                # Calcular la posición acumulada para posicionar las líneas correctamente
-                                acumulado = df_pivot_margen * 0  # Inicializar en 0
-
+                                # Cada línea debe posicionarse dentro de su segmento de barra apilada
                                 for idx, año in enumerate(sorted(años_unicos)):
-                                    if año in df_pivot_margen.columns:
+                                    if año in df_pivot_margen.columns and año in df_pivot.columns:
                                         color_line = colores_ganancia[idx % len(colores_ganancia)]
 
-                                        # Calcular posición Y de la línea (debe estar dentro de su segmento de barra)
-                                        # La línea va en el medio del segmento correspondiente al año
-                                        y_base = acumulado.sum(axis=1) if idx > 0 else df_pivot.iloc[:, :idx].sum(axis=1)
-                                        y_position = y_base + (df_pivot_margen[año] / 2)  # Mitad del segmento de ganancia
+                                        # Calcular la base acumulada (suma de años anteriores)
+                                        años_anteriores = sorted(años_unicos)[:idx]
+                                        if años_anteriores:
+                                            y_base = df_pivot[[a for a in años_anteriores if a in df_pivot.columns]].sum(axis=1)
+                                        else:
+                                            y_base = 0
+
+                                        # La línea se posiciona en el medio del segmento de este año
+                                        # y_base + (mitad del segmento de ventas del año)
+                                        y_position = y_base + (df_pivot[año] / 2)
 
                                         fig.add_trace(go.Scatter(
                                             x=df_pivot_margen.index,
-                                            y=df_pivot_margen[año],
+                                            y=y_position,
                                             name=f'Ganancia {int(año)}',
                                             mode='lines+markers',
                                             marker=dict(
@@ -601,7 +603,8 @@ with tab2:
                                                 line=dict(width=2, color='white')
                                             ),
                                             line=dict(width=2, color=color_line),
-                                            hovertemplate=f'<b>%{{x}} {int(año)}</b><br>Ganancia: ₡%{{y:,.2f}}<extra></extra>'
+                                            hovertemplate=f'<b>%{{x}} {int(año)}</b><br>Ganancia: ₡%{{customdata:,.2f}}<extra></extra>',
+                                            customdata=df_pivot_margen[año]
                                         ))
 
                                 title = 'Ventas y Ganancia por Mes (Comparativa por Año)'
@@ -665,20 +668,19 @@ with tab2:
         st.error(f"Error: {str(e)}")
 
 # ============================================================================
-# TAB 4: ANÁLISIS DIMENSIONAL
+# TAB 3: EXPLORACIÓN JERÁRQUICA
 # ============================================================================
 
 with tab3:
     crear_seccion_encabezado(
-        "Análisis Dimensional",
-        "DRILL-DOWN: aumentar detalle | ROLL-UP: aumentar agregación",
+        "Exploración Jerárquica de Datos",
+        "Navegación por dimensiones de tiempo, geografía, categorías y rankings",
         #badge="DRILL"
     )
 
-    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+    subtab1, subtab2, subtab3 = st.tabs([
         "Ventas por Tiempo",
         "Ventas por Geografía",
-        "Ventas por Categoría",
         "Top N"
     ])
 
@@ -691,7 +693,7 @@ with tab3:
             horizontal=True
         )
 
-        if st.button("Cargar Ventas por Tiempo"):
+        if st.button("Cargar Ventas por Tiempo", use_container_width=True, type="primary"):
             with st.spinner("Cargando datos..."):
                 try:
                     gran_map = {
@@ -703,8 +705,7 @@ with tab3:
                     df = get_ventas_tiempo(cubo, gran_map[granularidad])
 
                     if not df.empty:
-                        st.dataframe(df, use_container_width=True)
-
+                        # GRÁFICOS PRIMERO
                         col1, col2 = st.columns(2)
 
                         with col1:
@@ -715,7 +716,8 @@ with tab3:
                                     x=x_col,
                                     y='total_ventas',
                                     title='Total de Ventas',
-                                    labels={'total_ventas': 'Ventas (₡)'}
+                                    labels={'total_ventas': 'Ventas (₡)'},
+                                    color_discrete_sequence=['#3498db']
                                 )
                                 st.plotly_chart(fig, use_container_width=True)
 
@@ -731,6 +733,23 @@ with tab3:
                                     color_discrete_sequence=['#2ecc71']
                                 )
                                 st.plotly_chart(fig, use_container_width=True)
+
+                        st.markdown("---")
+
+                        # TABLA CON DATOS FORMATEADOS DESPUÉS
+                        st.markdown("### Datos Detallados")
+                        df_display = df.copy()
+
+                        # Formatear columnas numéricas
+                        for col in df_display.columns:
+                            if col in ['total_ventas', 'promedio_venta', 'total_margen']:
+                                df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
+                            elif col in ['transacciones', 'total_unidades']:
+                                df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "")
+                            elif 'porcentaje' in col.lower():
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
+
+                        st.dataframe(df_display, use_container_width=True, height=400)
                     else:
                         st.warning("No hay datos")
 
@@ -746,25 +765,33 @@ with tab3:
             horizontal=True
         )
 
-        if st.button("Cargar Ventas por Geografía"):
+        if st.button("Cargar Ventas por Geografía", use_container_width=True, type="primary"):
             with st.spinner("Cargando datos..."):
                 try:
                     nivel_map = {"Provincia": "provincia", "Cantón": "canton", "Distrito": "distrito"}
                     df = get_ventas_region(cubo, nivel_map[nivel_geo])
 
                     if not df.empty:
-                        st.dataframe(df, use_container_width=True)
-
+                        # GRÁFICOS PRIMERO
                         col1, col2 = st.columns(2)
+
+                        # Determinar qué columna usar según el nivel
+                        if nivel_geo == "Provincia":
+                            y_col = 'provincia'
+                        elif nivel_geo == "Cantón":
+                            y_col = 'canton'
+                        else:  # Distrito
+                            y_col = 'distrito'
 
                         with col1:
                             fig = px.bar(
                                 df.head(15),
                                 x='total_ventas',
-                                y=df.columns[0],
+                                y=y_col,
                                 orientation='h',
                                 title=f'Top 15 Ventas por {nivel_geo}',
-                                labels={'total_ventas': 'Ventas (₡)'}
+                                labels={'total_ventas': 'Ventas (₡)', y_col: nivel_geo},
+                                color_discrete_sequence=['#3498db']
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
@@ -772,10 +799,27 @@ with tab3:
                             fig = px.pie(
                                 df.head(10),
                                 values='total_ventas',
-                                names=df.columns[0],
+                                names=y_col,
                                 title=f'Distribución Top 10 {nivel_geo}'
                             )
                             st.plotly_chart(fig, use_container_width=True)
+
+                        st.markdown("---")
+
+                        # TABLA CON DATOS FORMATEADOS DESPUÉS
+                        st.markdown("### Datos Detallados")
+                        df_display = df.copy()
+
+                        # Formatear columnas numéricas
+                        for col in df_display.columns:
+                            if col in ['total_ventas', 'promedio_venta', 'total_margen']:
+                                df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
+                            elif col in ['transacciones', 'total_unidades', 'clientes_unicos']:
+                                df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "")
+                            elif 'porcentaje' in col.lower():
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
+
+                        st.dataframe(df_display, use_container_width=True, height=400)
                     else:
                         st.warning("No hay datos")
 
@@ -783,44 +827,6 @@ with tab3:
                     st.error(f"Error: {str(e)}")
 
     with subtab3:
-        st.subheader("Análisis de Ventas por Categoría")
-
-        if st.button("Cargar Ventas por Categoría"):
-            with st.spinner("Cargando categorías..."):
-                try:
-                    df = get_ventas_categoria(cubo)
-
-                    if not df.empty:
-                        st.dataframe(df, use_container_width=True)
-
-                        col1, col2 = st.columns(2)
-
-                        with col1:
-                            fig = px.bar(
-                                df,
-                                x='categoria',
-                                y='total_ventas',
-                                title='Ventas por Categoría',
-                                labels={'total_ventas': 'Ventas (₡)'},
-                                color='margen_porcentaje'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                        with col2:
-                            fig = px.pie(
-                                df,
-                                values='total_ventas',
-                                names='categoria',
-                                title='Participación en Ventas'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.warning("No hay datos")
-
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-
-    with subtab4:
         st.subheader("Top N Análisis")
 
         col1, col2 = st.columns(2)
@@ -831,28 +837,47 @@ with tab3:
         with col2:
             top_n = st.slider("Cantidad", 5, 50, 10)
 
-        if st.button("Cargar TOP N"):
+        if st.button("Cargar TOP N", use_container_width=True, type="primary"):
             with st.spinner(f"Cargando TOP {top_n}..."):
                 try:
                     if top_type == "Productos":
                         df = get_top_productos(cubo, top_n)
                         col_sort = 'total_ventas'
+                        y_col = 'producto'
                     else:
                         df = get_top_clientes(cubo, top_n)
                         col_sort = 'total_gasto'
+                        y_col = 'cliente'
 
                     if not df.empty:
-                        st.dataframe(df, use_container_width=True)
-
+                        # GRÁFICO PRIMERO
                         fig = px.bar(
                             df,
                             x=col_sort,
-                            y=df.columns[1],
+                            y=y_col,
                             orientation='h',
                             title=f'Top {top_n} {top_type}',
-                            labels={col_sort: 'Monto (₡)'}
+                            labels={col_sort: 'Monto (₡)'},
+                            color_discrete_sequence=['#e74c3c']
                         )
                         st.plotly_chart(fig, use_container_width=True)
+
+                        st.markdown("---")
+
+                        # TABLA CON DATOS FORMATEADOS DESPUÉS
+                        st.markdown("### Datos Detallados")
+                        df_display = df.copy()
+
+                        # Formatear columnas numéricas
+                        for col in df_display.columns:
+                            if col in ['total_ventas', 'total_gasto', 'promedio_compra', 'compra_maxima', 'total_margen', 'margen_generado', 'precio_unitario', 'costo_unitario']:
+                                df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
+                            elif col in ['transacciones', 'total_unidades']:
+                                df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "")
+                            elif 'porcentaje' in col.lower():
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
+
+                        st.dataframe(df_display, use_container_width=True, height=400)
                     else:
                         st.warning("No hay datos")
 
@@ -860,232 +885,142 @@ with tab3:
                     st.error(f"Error: {str(e)}")
 
 # ============================================================================
-# TAB 5: PIVOT
+# TAB 4: COMPORTAMIENTO WEB (SIMPLIFICADO)
 # ============================================================================
 
 with tab4:
     crear_seccion_encabezado(
-        "Operación PIVOT",
-        "Rotar dimensiones para diferentes vistas tabulares",
-        #badge="OLAP"
-    )
-
-    try:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            filas = st.selectbox(
-                "Dimensión para filas",
-                ["provincia", "canton", "categoria", "anio"],
-                key="pivot_rows"
-            )
-
-        with col2:
-            columnas = st.selectbox(
-                "Dimensión para columnas",
-                ["provincia", "canton", "categoria", "mes", "anio"],
-                key="pivot_cols"
-            )
-
-        with col3:
-            metrica = st.selectbox(
-                "Métrica",
-                ["monto_total", "margen", "transacciones", "cantidad"],
-                key="pivot_metric"
-            )
-
-        if st.button("Ejecutar PIVOT", use_container_width=True):
-            with st.spinner("Ejecutando PIVOT..."):
-                try:
-                    df_pivoted = ejecutar_pivot(cubo, filas, columnas, metrica)
-
-                    if not df_pivoted.empty:
-                        st.success("PIVOT ejecutado exitosamente")
-
-                        st.subheader(f"Tabla Pivotada: {filas} × {columnas}")
-                        st.dataframe(df_pivoted, use_container_width=True)
-
-                        fig = px.imshow(
-                            df_pivoted,
-                            labels=dict(color=metrica.title()),
-                            title=f'{metrica.title()} por {filas} y {columnas}',
-                            color_continuous_scale='RdYlGn'
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.warning("No hay datos para este pivot")
-
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-
-# ============================================================================
-# TAB 6: COMPORTAMIENTO WEB
-# ============================================================================
-
-with tab5:
-    crear_seccion_encabezado(
-        "Análisis de Comportamiento Web",
-        "Eventos, búsquedas y funnel de conversión",
+        "Análisis de Interacción Digital",
+        "Navegación, eventos web y patrones de búsqueda de usuarios",
         #badge="WEB"
     )
 
-    subtab1, subtab2, subtab3 = st.tabs([
-        "Comportamiento Web",
-        "Análisis de Búsquedas",
-        "Funnel de Conversión"
+    subtab1, subtab2 = st.tabs([
+        "Eventos de Navegación",
+        "Análisis de Búsquedas"
     ])
 
     with subtab1:
-        st.subheader("Análisis del Comportamiento de Usuarios")
+        st.subheader("Interacciones y Eventos de Usuarios")
 
-        if st.button("Cargar Comportamiento Web"):
-            with st.spinner("Cargando datos web..."):
+        if st.button("Cargar Eventos Web", use_container_width=True, type="primary"):
+            with st.spinner("Cargando análisis de eventos..."):
                 try:
                     comportamiento = get_comportamiento_web(cubo)
 
-                    # Eventos por Tipo
-                    st.markdown("### Eventos por Tipo")
+                    # Métricas Generales en la parte superior
                     if 'eventos_por_tipo' in comportamiento and not comportamiento['eventos_por_tipo'].empty:
                         df_eventos = comportamiento['eventos_por_tipo']
-                        st.dataframe(df_eventos, use_container_width=True)
 
-                        col1, col2 = st.columns(2)
+                        total_eventos = df_eventos['total_eventos'].sum()
+                        total_usuarios = df_eventos['usuarios_unicos'].max()
+                        total_conversiones = df_eventos['conversiones'].sum()
+                        tasa_global = (total_conversiones / total_eventos * 100) if total_eventos > 0 else 0
+
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
+                            st.metric("Total Eventos", f"{total_eventos:,}")
+                        with col2:
+                            st.metric("Usuarios Únicos", f"{total_usuarios:,}")
+                        with col3:
+                            st.metric("Conversiones", f"{total_conversiones:,}")
+                        with col4:
+                            st.metric("Tasa Conversión", f"{tasa_global:.2f}%")
+
+                        st.markdown("---")
+
+                        # Gráficos principales
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.markdown("### Eventos por Tipo")
                             fig = px.bar(
                                 df_eventos.head(10),
                                 x='tipo_evento',
                                 y='total_eventos',
-                                title='Top 10 Eventos Web',
-                                labels={'total_eventos': 'Eventos', 'tipo_evento': 'Tipo de Evento'},
+                                labels={'total_eventos': 'Cantidad', 'tipo_evento': 'Tipo de Evento'},
                                 color='total_eventos',
                                 color_continuous_scale='Blues'
                             )
-                            fig.update_xaxes(tickangle=45)
+                            fig.update_xaxes(tickangle=-45)
                             st.plotly_chart(fig, use_container_width=True)
 
                         with col2:
+                            st.markdown("### Tasa de Conversión por Evento")
                             fig = px.bar(
                                 df_eventos.head(10),
                                 x='tipo_evento',
                                 y='tasa_conversion',
-                                title='Tasa de Conversión por Evento',
-                                labels={'tasa_conversion': 'Conversión (%)', 'tipo_evento': 'Tipo de Evento'},
+                                labels={'tasa_conversion': 'Conversión (%)', 'tipo_evento': 'Tipo'},
                                 color='tasa_conversion',
                                 color_continuous_scale='Greens'
                             )
-                            fig.update_xaxes(tickangle=45)
+                            fig.update_xaxes(tickangle=-45)
                             st.plotly_chart(fig, use_container_width=True)
 
-                    # Dispositivos
-                    st.markdown("### Análisis por Dispositivo")
-                    if 'dispositivos' in comportamiento and not comportamiento['dispositivos'].empty:
-                        df_dispositivos = comportamiento['dispositivos']
-                        st.dataframe(df_dispositivos, use_container_width=True)
+                    # Análisis por Dispositivo y Navegador (consolidado)
+                    st.markdown("---")
+                    st.markdown("### Análisis de Plataformas")
 
-                        col1, col2 = st.columns(2)
-                        with col1:
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        if 'dispositivos' in comportamiento and not comportamiento['dispositivos'].empty:
+                            df_dispositivos = comportamiento['dispositivos']
                             fig = px.pie(
                                 df_dispositivos,
                                 values='total_eventos',
                                 names='tipo_dispositivo',
-                                title='Eventos por Tipo de Dispositivo',
-                                color_discrete_sequence=px.colors.qualitative.Set2
+                                title='Distribución por Tipo de Dispositivo'
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                        with col2:
-                            fig = px.bar(
-                                df_dispositivos,
-                                x='tipo_dispositivo',
-                                y='tasa_conversion',
-                                title='Conversión por Tipo de Dispositivo',
-                                labels={'tasa_conversion': 'Conversión (%)', 'tipo_dispositivo': 'Tipo'},
-                                color='tasa_conversion',
-                                color_continuous_scale='RdYlGn'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                    # Navegadores
-                    st.markdown("### Análisis por Navegador")
-                    if 'navegadores' in comportamiento and not comportamiento['navegadores'].empty:
-                        df_navegadores = comportamiento['navegadores']
-                        st.dataframe(df_navegadores, use_container_width=True)
-
-                        col1, col2 = st.columns(2)
-                        with col1:
+                    with col2:
+                        if 'navegadores' in comportamiento and not comportamiento['navegadores'].empty:
+                            df_navegadores = comportamiento['navegadores']
                             fig = px.bar(
                                 df_navegadores.head(5),
                                 x='navegador',
                                 y='total_eventos',
                                 title='Top 5 Navegadores',
-                                labels={'total_eventos': 'Eventos', 'navegador': 'Navegador'}
+                                labels={'total_eventos': 'Eventos', 'navegador': 'Navegador'},
+                                color_discrete_sequence=['#3498db']
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                        with col2:
-                            fig = px.bar(
-                                df_navegadores.head(5),
-                                x='navegador',
-                                y='tasa_conversion',
-                                title='Conversión por Navegador',
-                                labels={'tasa_conversion': 'Conversión (%)', 'navegador': 'Navegador'},
-                                color='tasa_conversion',
-                                color_continuous_scale='Viridis'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                    # Productos Más Vistos
-                    st.markdown("### Productos Más Vistos")
+                    # Productos Más Vistos (simplificado)
                     if 'productos_vistos' in comportamiento and not comportamiento['productos_vistos'].empty:
+                        st.markdown("---")
+                        st.markdown("### Top 10 Productos Más Vistos")
                         df_productos = comportamiento['productos_vistos']
-                        st.dataframe(df_productos, use_container_width=True)
 
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            fig = px.bar(
-                                df_productos.head(10),
-                                x='total_visualizaciones',
-                                y='producto',
-                                orientation='h',
-                                title='Top 10 Productos Más Vistos',
-                                labels={'total_visualizaciones': 'Visualizaciones', 'producto': 'Producto'}
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                        with col2:
-                            fig = px.scatter(
-                                df_productos.head(20),
-                                x='total_visualizaciones',
-                                y='veces_comprado',
-                                size='tasa_conversion',
-                                color='categoria',
-                                hover_name='producto',
-                                title='Visualizaciones vs Compras',
-                                labels={'total_visualizaciones': 'Visualizaciones', 'veces_comprado': 'Compras'}
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
+                        fig = px.bar(
+                            df_productos.head(10),
+                            x='total_visualizaciones',
+                            y='producto',
+                            orientation='h',
+                            labels={'total_visualizaciones': 'Visualizaciones', 'producto': 'Producto'},
+                            color='tasa_conversion',
+                            color_continuous_scale='RdYlGn'
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
     with subtab2:
-        st.subheader("Análisis de Búsquedas de Usuarios")
+        st.subheader("Patrones de Búsqueda y Productos")
 
-        if st.button("Cargar Análisis de Búsquedas"):
-            with st.spinner("Cargando búsquedas..."):
+        if st.button("Cargar Análisis de Búsquedas", use_container_width=True, type="primary"):
+            with st.spinner("Cargando análisis de búsquedas..."):
                 try:
                     busquedas = get_analisis_busquedas(cubo)
 
-                    # Resumen General
+                    # Resumen General (simplificado)
                     if 'resumen' in busquedas and not busquedas['resumen'].empty:
                         resumen = busquedas['resumen'].iloc[0]
 
-                        st.markdown("### Resumen de Búsquedas")
                         col1, col2, col3, col4 = st.columns(4)
-
                         with col1:
                             st.metric("Total Búsquedas", f"{resumen['total_busquedas']:,.0f}")
                         with col2:
@@ -1095,146 +1030,54 @@ with tab5:
                         with col4:
                             st.metric("Tasa Conversión", f"{resumen['tasa_conversion_global']:.2f}%")
 
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Promedio Resultados", f"{resumen['promedio_resultados']:.1f}")
-                        with col2:
-                            st.metric("Sin Resultado", f"{resumen['porcentaje_sin_resultado']:.2f}%")
+                        st.markdown("---")
 
-                    # Búsquedas por Dispositivo
-                    st.markdown("### Búsquedas por Dispositivo")
-                    if 'busquedas_dispositivo' in busquedas and not busquedas['busquedas_dispositivo'].empty:
-                        df_dispositivo = busquedas['busquedas_dispositivo']
-                        st.dataframe(df_dispositivo, use_container_width=True)
+                    # Gráficos principales consolidados
+                    col1, col2 = st.columns(2)
 
-                        col1, col2 = st.columns(2)
-                        with col1:
+                    with col1:
+                        # Búsquedas por Dispositivo
+                        if 'busquedas_dispositivo' in busquedas and not busquedas['busquedas_dispositivo'].empty:
+                            st.markdown("### Distribución por Dispositivo")
+                            df_dispositivo = busquedas['busquedas_dispositivo']
                             fig = px.pie(
                                 df_dispositivo,
                                 values='total_busquedas',
                                 names='tipo_dispositivo',
-                                title='Distribución de Búsquedas por Dispositivo',
                                 color_discrete_sequence=px.colors.qualitative.Pastel
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                        with col2:
-                            fig = px.bar(
-                                df_dispositivo,
-                                x='tipo_dispositivo',
-                                y='tasa_conversion',
-                                title='Tasa de Conversión por Dispositivo',
-                                labels={'tasa_conversion': 'Conversión (%)', 'tipo_dispositivo': 'Dispositivo'},
-                                color='tasa_conversion',
-                                color_continuous_scale='Oranges'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                    # Búsquedas por Navegador
-                    st.markdown("### Búsquedas por Navegador")
-                    if 'busquedas_navegador' in busquedas and not busquedas['busquedas_navegador'].empty:
-                        df_navegador = busquedas['busquedas_navegador']
-                        st.dataframe(df_navegador.head(10), use_container_width=True)
-
-                        col1, col2 = st.columns(2)
-                        with col1:
+                    with col2:
+                        # Búsquedas por Navegador
+                        if 'busquedas_navegador' in busquedas and not busquedas['busquedas_navegador'].empty:
+                            st.markdown("### Top 5 Navegadores")
+                            df_navegador = busquedas['busquedas_navegador']
                             fig = px.bar(
                                 df_navegador.head(5),
                                 x='navegador',
                                 y='total_busquedas',
-                                title='Top 5 Navegadores - Búsquedas',
-                                labels={'total_busquedas': 'Búsquedas', 'navegador': 'Navegador'}
+                                labels={'total_busquedas': 'Búsquedas', 'navegador': 'Navegador'},
+                                color_discrete_sequence=['#e74c3c']
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                        with col2:
-                            fig = px.bar(
-                                df_navegador.head(5),
-                                x='navegador',
-                                y='tasa_conversion',
-                                title='Conversión por Navegador',
-                                labels={'tasa_conversion': 'Conversión (%)', 'navegador': 'Navegador'},
-                                color='tasa_conversion',
-                                color_continuous_scale='Teal'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                    # Productos Más Buscados
-                    st.markdown("### Productos Más Buscados")
+                    # Productos Más Buscados (simplificado)
                     if 'productos_buscados' in busquedas and not busquedas['productos_buscados'].empty:
+                        st.markdown("---")
+                        st.markdown("### Top 10 Productos Más Buscados")
                         df_productos = busquedas['productos_buscados']
-                        st.dataframe(df_productos, use_container_width=True)
 
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            fig = px.bar(
-                                df_productos.head(10),
-                                x='total_busquedas',
-                                y='producto',
-                                orientation='h',
-                                title='Top 10 Productos Más Buscados',
-                                labels={'total_busquedas': 'Búsquedas', 'producto': 'Producto'},
-                                color='total_busquedas',
-                                color_continuous_scale='Purples'
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                        with col2:
-                            fig = px.scatter(
-                                df_productos.head(20),
-                                x='total_busquedas',
-                                y='veces_comprado',
-                                size='tasa_conversion',
-                                color='categoria',
-                                hover_name='producto',
-                                title='Búsquedas vs Compras',
-                                labels={'total_busquedas': 'Búsquedas', 'veces_comprado': 'Compras'}
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-
-    with subtab3:
-        st.subheader("Análisis de Funnel de Conversión")
-
-        if st.button("Cargar Funnel de Conversión"):
-            with st.spinner("Cargando funnel..."):
-                try:
-                    df_funnel = get_funnel_conversion(cubo)
-
-                    if not df_funnel.empty:
-                        st.dataframe(df_funnel, use_container_width=True)
-
-                        fig = go.Figure(go.Funnel(
-                            y=df_funnel['etapa'],
-                            x=df_funnel['cantidad'],
-                            textposition="inside",
-                            textinfo="value+percent previous",
-                            marker=dict(color=['#3498db', '#2980b9', '#1c5294', '#0d3e66', '#051e3e'])
-                        ))
-
-                        fig.update_layout(
-                            title="Funnel de Conversión",
-                            showlegend=False,
-                            height=500
+                        fig = px.bar(
+                            df_productos.head(10),
+                            x='total_busquedas',
+                            y='producto',
+                            orientation='h',
+                            labels={'total_busquedas': 'Búsquedas', 'producto': 'Producto'},
+                            color='tasa_conversion',
+                            color_continuous_scale='Purples'
                         )
-
                         st.plotly_chart(fig, use_container_width=True)
-
-                        st.subheader("Análisis del Funnel")
-
-                        if len(df_funnel) >= 2:
-                            total_busquedas = df_funnel.iloc[0]['cantidad']
-                            compras = df_funnel.iloc[-1]['cantidad']
-                            conversion_total = (compras / total_busquedas * 100) if total_busquedas > 0 else 0
-
-                            st.info(f"""
-                            **Métricas de Conversión**
-                            Total Búsquedas: {total_busquedas:,}
-                            Compras Completadas: {compras:,}
-                            Tasa de Conversión Total: {conversion_total:.2f}%
-                            """)
 
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
