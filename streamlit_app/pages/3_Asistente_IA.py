@@ -114,81 +114,190 @@ def get_dw_engine():
 def cargar_datos_contexto(_conn) -> dict:
     """
     Carga datos agregados del DW para contexto de Claude
-    Optimizado para ser usado en el prompt del sistema
+    Optimizado con agregación correcta por venta_id y datos de 3 años completos
     """
 
-    # Ventas por categoría
+    # Ventas por categoría (con agrupación correcta)
     query_categorias = """
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.producto_id,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.producto_id
+        )
         SELECT
             p.categoria,
-            COUNT(DISTINCT fv.venta_id) AS num_ventas,
-            SUM(fv.cantidad) AS unidades_vendidas,
-            SUM(fv.monto_total) AS ventas_totales,
-            SUM(fv.margen) AS margen_total,
-            ROUND(AVG(fv.monto_total), 2) AS ticket_promedio
-        FROM fact_ventas fv
-        INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-        WHERE fv.venta_cancelada = 0
+            COUNT(DISTINCT va.venta_id) AS num_ventas,
+            SUM(va.total_unidades) AS unidades_vendidas,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+            ROUND(AVG(va.monto_venta), 2) AS ticket_promedio
+        FROM VentasAgrupadas va
+        INNER JOIN dim_producto p ON va.producto_id = p.producto_id
         GROUP BY p.categoria
         ORDER BY ventas_totales DESC
     """
 
-    # Ventas por provincia
+    # Ventas por provincia (con agrupación correcta)
     query_provincias = """
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.provincia_id,
+                fv.canton_id,
+                fv.distrito_id,
+                fv.cliente_id,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+        )
         SELECT
             g.provincia,
-            COUNT(DISTINCT fv.venta_id) AS num_ventas,
-            SUM(fv.monto_total) AS ventas_totales,
-            COUNT(DISTINCT fv.cliente_id) AS num_clientes
-        FROM fact_ventas fv
-        INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-            AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-        WHERE fv.venta_cancelada = 0
+            COUNT(DISTINCT va.venta_id) AS num_ventas,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            COUNT(DISTINCT va.cliente_id) AS num_clientes
+        FROM VentasAgrupadas va
+        INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+            AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
         GROUP BY g.provincia
         ORDER BY ventas_totales DESC
     """
 
-    # Ventas mensuales (últimos 12 meses)
+    # Ventas por AÑO (completo - todos los años disponibles)
+    query_anuales = """
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.tiempo_key,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.tiempo_key
+        )
+        SELECT
+            t.ANIO_CAL AS anio,
+            COUNT(DISTINCT va.venta_id) AS num_ventas,
+            SUM(va.total_unidades) AS unidades_vendidas,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+            ROUND(AVG(va.monto_venta), 2) AS ticket_promedio
+        FROM VentasAgrupadas va
+        INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+        GROUP BY t.ANIO_CAL
+        ORDER BY t.ANIO_CAL
+    """
+
+    # Ventas MENSUALES (todos los meses de todos los años)
     query_mensuales = """
-        SELECT TOP 12
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.tiempo_key,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.tiempo_key
+        )
+        SELECT
             t.ANIO_CAL AS anio,
             t.MES_CAL AS mes,
             t.MES_NOMBRE AS mes_nombre,
-            COUNT(DISTINCT fv.venta_id) AS num_ventas,
-            SUM(fv.monto_total) AS ventas_totales,
-            SUM(fv.margen) AS margen_total
-        FROM fact_ventas fv
-        INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-        WHERE fv.venta_cancelada = 0
+            COUNT(DISTINCT va.venta_id) AS num_ventas,
+            SUM(va.total_unidades) AS unidades_vendidas,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+        FROM VentasAgrupadas va
+        INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
         GROUP BY t.ANIO_CAL, t.MES_CAL, t.MES_NOMBRE
-        ORDER BY t.ANIO_CAL DESC, t.MES_CAL DESC
+        ORDER BY t.ANIO_CAL, t.MES_CAL
     """
 
-    # Top 10 productos
+    # Top 20 productos (ampliado para mejor contexto)
     query_productos = """
-        SELECT TOP 10
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.producto_id,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.producto_id
+        )
+        SELECT TOP 20
             p.nombre_producto,
             p.categoria,
-            SUM(fv.cantidad) AS unidades_vendidas,
-            SUM(fv.monto_total) AS ventas_totales
-        FROM fact_ventas fv
-        INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-        WHERE fv.venta_cancelada = 0
-        GROUP BY p.nombre_producto, p.categoria
+            p.precio_unitario,
+            SUM(va.total_unidades) AS unidades_vendidas,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+        FROM VentasAgrupadas va
+        INNER JOIN dim_producto p ON va.producto_id = p.producto_id
+        GROUP BY p.nombre_producto, p.categoria, p.precio_unitario
         ORDER BY ventas_totales DESC
     """
 
-    # Métricas generales
+    # Métricas generales (con agrupación correcta)
     query_metricas = """
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.cliente_id,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta,
+                SUM(fv.margen) AS margen_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.cliente_id
+        )
         SELECT
-            COUNT(DISTINCT fv.venta_id) AS total_ventas,
-            COUNT(DISTINCT fv.cliente_id) AS total_clientes,
-            SUM(fv.monto_total) AS ventas_totales,
-            SUM(fv.margen) AS margen_total,
-            AVG(fv.monto_total) AS ticket_promedio,
-            SUM(fv.cantidad) AS unidades_totales
-        FROM fact_ventas fv
-        WHERE fv.venta_cancelada = 0
+            COUNT(DISTINCT venta_id) AS total_ventas,
+            COUNT(DISTINCT cliente_id) AS total_clientes,
+            SUM(monto_venta) AS ventas_totales,
+            SUM(margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(margen_venta) / NULLIF(SUM(monto_venta), 0), 2) AS margen_porcentaje,
+            AVG(monto_venta) AS ticket_promedio,
+            SUM(total_unidades) AS unidades_totales
+        FROM VentasAgrupadas
+    """
+
+    # Productos por categoría (para análisis detallado)
+    query_productos_categoria = """
+        WITH VentasAgrupadas AS (
+            SELECT
+                fv.venta_id,
+                fv.producto_id,
+                SUM(fv.cantidad) AS total_unidades,
+                SUM(fv.monto_total) AS monto_venta
+            FROM fact_ventas fv
+            WHERE fv.venta_cancelada = 0
+            GROUP BY fv.venta_id, fv.producto_id
+        )
+        SELECT
+            p.categoria,
+            COUNT(DISTINCT p.producto_id) AS num_productos_distintos,
+            SUM(va.total_unidades) AS unidades_vendidas
+        FROM VentasAgrupadas va
+        INNER JOIN dim_producto p ON va.producto_id = p.producto_id
+        GROUP BY p.categoria
+        ORDER BY unidades_vendidas DESC
     """
 
     # Función auxiliar para convertir tipos nullable a estándar
@@ -201,50 +310,72 @@ def cargar_datos_contexto(_conn) -> dict:
     return {
         'categorias': convertir_tipos_arrow_compatibles(pd.read_sql(query_categorias, _conn)),
         'provincias': convertir_tipos_arrow_compatibles(pd.read_sql(query_provincias, _conn)),
+        'anuales': convertir_tipos_arrow_compatibles(pd.read_sql(query_anuales, _conn)),
         'mensuales': convertir_tipos_arrow_compatibles(pd.read_sql(query_mensuales, _conn)),
         'productos': convertir_tipos_arrow_compatibles(pd.read_sql(query_productos, _conn)),
+        'productos_categoria': convertir_tipos_arrow_compatibles(pd.read_sql(query_productos_categoria, _conn)),
         'metricas': convertir_tipos_arrow_compatibles(pd.read_sql(query_metricas, _conn))
     }
 
 def formatear_datos_para_contexto(datos: dict) -> str:
     """
-    Formatea los datos en un string legible para Claude
+    Formatea los datos en un string legible para Claude con información completa de 3 años
     """
     contexto = []
 
     # Métricas generales
     metricas = datos['metricas'].iloc[0]
-    contexto.append("=== MÉTRICAS GENERALES DEL NEGOCIO ===")
-    contexto.append(f"Total de Ventas: {metricas['total_ventas']:,} transacciones")
-    contexto.append(f"Total de Clientes: {metricas['total_clientes']:,}")
-    contexto.append(f"Ventas Totales: ₡{metricas['ventas_totales']:,.2f}")
-    contexto.append(f"Margen Total: ₡{metricas['margen_total']:,.2f}")
+    contexto.append("=== RESUMEN EJECUTIVO DEL NEGOCIO ===")
+    contexto.append(f"Ventas Totales: ₡{metricas['ventas_totales']:,.2f} | Margen: ₡{metricas['margen_total']:,.2f} ({metricas['margen_porcentaje']:.1f}%)")
+    contexto.append(f"Transacciones: {metricas['total_ventas']:,} | Clientes: {metricas['total_clientes']:,} | Unidades: {metricas['unidades_totales']:,}")
     contexto.append(f"Ticket Promedio: ₡{metricas['ticket_promedio']:,.2f}")
-    contexto.append(f"Unidades Vendidas: {metricas['unidades_totales']:,}")
     contexto.append("")
 
-    # Ventas por categoría
-    contexto.append("=== VENTAS POR CATEGORÍA ===")
+    # Ventas por AÑO (tendencia multi-anual)
+    contexto.append("=== EVOLUCIÓN ANUAL ===")
+    for _, row in datos['anuales'].iterrows():
+        contexto.append(f"{int(row['anio'])}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | Margen: {row['margen_porcentaje']:.1f}% | Ticket: ₡{row['ticket_promedio']:,.2f}")
+
+    # Calcular crecimiento año a año
+    if len(datos['anuales']) >= 2:
+        años = datos['anuales'].sort_values('anio')
+        crecimiento = []
+        for i in range(1, len(años)):
+            año_actual = años.iloc[i]
+            año_anterior = años.iloc[i-1]
+            pct_change = ((año_actual['ventas_totales'] - año_anterior['ventas_totales']) / año_anterior['ventas_totales']) * 100
+            crecimiento.append(f"{int(año_anterior['anio'])}->{int(año_actual['anio'])}: {pct_change:+.1f}%")
+        contexto.append(f"Crecimiento: {', '.join(crecimiento)}")
+    contexto.append("")
+
+    # Ventas por CATEGORÍA
+    contexto.append("=== PERFORMANCE POR CATEGORÍA ===")
     for _, row in datos['categorias'].iterrows():
-        contexto.append(f"- {row['categoria']}: ₡{row['ventas_totales']:,.2f} ({row['num_ventas']:,} ventas, {row['unidades_vendidas']:,} unidades)")
+        contexto.append(f"{row['categoria']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['unidades_vendidas']:,} uds | Margen: {row['margen_porcentaje']:.1f}%")
     contexto.append("")
 
-    # Ventas por provincia
-    contexto.append("=== VENTAS POR PROVINCIA ===")
+    # Productos en cada categoría
+    contexto.append("=== CATÁLOGO POR CATEGORÍA ===")
+    for _, row in datos['productos_categoria'].iterrows():
+        contexto.append(f"{row['categoria']}: {row['num_productos_distintos']} productos distintos")
+    contexto.append("")
+
+    # Ventas por PROVINCIA
+    contexto.append("=== DISTRIBUCIÓN GEOGRÁFICA ===")
     for _, row in datos['provincias'].iterrows():
-        contexto.append(f"- {row['provincia']}: ₡{row['ventas_totales']:,.2f} ({row['num_clientes']:,} clientes)")
+        contexto.append(f"{row['provincia']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['num_clientes']:,} clientes")
     contexto.append("")
 
-    # Top 10 productos
-    contexto.append("=== TOP 10 PRODUCTOS ===")
-    for _, row in datos['productos'].iterrows():
-        contexto.append(f"- {row['nombre_producto']} ({row['categoria']}): ₡{row['ventas_totales']:,.2f}")
+    # Top 20 productos
+    contexto.append("=== TOP 20 PRODUCTOS ===")
+    for idx, row in datos['productos'].iterrows():
+        contexto.append(f"{idx+1}. {row['nombre_producto']} ({row['categoria']}): ₡{row['ventas_totales']:,.2f} | {row['unidades_vendidas']:,} uds | Precio: ₡{row['precio_unitario']:,.2f} | Margen: {row['margen_porcentaje']:.1f}%")
     contexto.append("")
 
-    # Ventas mensuales
-    contexto.append("=== VENTAS MENSUALES (ÚLTIMOS 12 MESES) ===")
+    # Ventas MENSUALES (tendencia detallada)
+    contexto.append("=== HISTÓRICO MENSUAL COMPLETO ===")
     for _, row in datos['mensuales'].iterrows():
-        contexto.append(f"- {row['mes_nombre']} {row['anio']}: ₡{row['ventas_totales']:,.2f}")
+        contexto.append(f"{row['mes_nombre']} {int(row['anio'])}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | Margen: {row['margen_porcentaje']:.1f}%")
 
     return "\n".join(contexto)
 
@@ -280,29 +411,42 @@ def inicializar_claude_client():
 
 def construir_system_prompt(contexto_datos: str) -> str:
     """
-    Construye el prompt del sistema con instrucciones y datos
+    Construye el prompt del sistema con instrucciones y datos completos de 3 años
     """
-    return f"""Eres un asistente de análisis de datos empresariales experto. Tu trabajo es ayudar a analizar datos de un e-commerce en Costa Rica.
+    return f"""Eres un analista de datos senior especializado en e-commerce y retail. Trabajas con datos históricos de 3 años completos de un negocio de comercio electrónico en Costa Rica.
 
-DATOS DEL NEGOCIO:
+CONTEXTO DE DATOS DISPONIBLES:
 {contexto_datos}
 
-INSTRUCCIONES:
-1. Responde preguntas sobre ventas, productos, clientes y métricas del negocio
-2. Proporciona insights accionables basados en los datos
-3. Cuando sea relevante, sugiere análisis adicionales
-4. Usa formato de moneda costarricense (₡)
-5. Sé conciso pero completo en tus respuestas
-6. Si necesitas más datos específicos, indica qué query SQL sería útil
+TU ROL:
+- Analizar tendencias históricas y patrones de crecimiento usando datos de múltiples años
+- Realizar proyecciones basadas en histórico de 3 años
+- Identificar productos de alto rendimiento y oportunidades de optimización
+- Proporcionar insights sobre márgenes, rentabilidad y eficiencia operativa
+- Comparar performance entre años, categorías, provincias y productos
 
-CAPACIDADES:
-- Análisis de tendencias de ventas
-- Comparación de categorías y productos
-- Análisis geográfico (provincias)
-- Cálculo de métricas (ticket promedio, margen, etc.)
-- Recomendaciones de negocio basadas en datos
+CAPACIDADES ANALÍTICAS:
+1. Análisis Temporal: Tendencias anuales, estacionalidad, crecimiento año a año
+2. Análisis de Productos: Performance individual, categorías, márgenes, rotación
+3. Análisis Geográfico: Distribución de ventas por provincia, penetración de mercado
+4. Proyecciones: Forecasting basado en tendencias históricas (regresión lineal, promedio móvil)
+5. Benchmarking: Comparaciones entre períodos, categorías y productos
+6. Análisis de Rentabilidad: Márgenes, ticket promedio, eficiencia por categoría
 
-Responde siempre en español y con un tono profesional pero amigable."""
+INSTRUCCIONES DE RESPUESTA:
+- Usa SIEMPRE moneda costarricense (₡) para valores monetarios
+- Proporciona números específicos y porcentajes cuando sea relevante
+- Para proyecciones, explica la metodología (ej: "basado en crecimiento promedio de X% de los últimos 3 años")
+- Identifica patterns year-over-year para insights de estacionalidad
+- Sugiere acciones concretas basadas en los datos
+- Sé conciso pero preciso en tus análisis
+
+FORMATO DE RESPUESTAS:
+- Para datos históricos: cita años específicos y comparaciones
+- Para proyecciones: indica el método y nivel de confianza
+- Para recomendaciones: prioriza por impacto potencial
+
+Responde siempre en español profesional."""
 
 def calcular_costo_tokens(input_tokens: int, output_tokens: int) -> float:
     """
@@ -340,8 +484,8 @@ if "contexto_cargado" not in st.session_state:
 # ============================================================================
 
 crear_seccion_encabezado(
-    "Asistente IA - Claude",
-    "Consulta datos en lenguaje natural y obtén insights inteligentes",
+    "Asistente de Análisis Inteligente",
+    "Análisis de datos empresariales con IA - Consultas en lenguaje natural",
     badge_color="primary"
 )
 
@@ -358,71 +502,56 @@ if not st.session_state.contexto_cargado:
         st.session_state.contexto_cargado = True
 
 # ============================================================================
-# SIDEBAR - EJEMPLOS Y ESTADÍSTICAS
+# SIDEBAR - ESTADÍSTICAS Y CONTROLES
 # ============================================================================
 
-st.sidebar.title("💡 Preguntas de Ejemplo")
+# Información sobre el contexto de datos
+with st.sidebar.expander("📊 Datos Disponibles", expanded=True):
+    metricas = st.session_state.datos_contexto['metricas'].iloc[0]
+    años = st.session_state.datos_contexto['anuales']
+    num_años = len(años)
+    año_min = int(años['anio'].min())
+    año_max = int(años['anio'].max())
 
-ejemplos = [
-    "¿Cómo han crecido las ventas este año?",
-    "¿Qué categoría tiene el mejor margen de ganancia?",
-    "¿Cuáles son los productos más vendidos?",
-    "Compara las ventas entre provincias",
-    "¿Cuál es el ticket promedio por categoría?",
-    "Analiza la tendencia de ventas mensual",
-    "¿Qué productos deberíamos promocionar?",
-    "Dame un resumen ejecutivo del negocio",
-]
+    st.markdown(f"""
+    **Período de Datos:** {año_min} - {año_max} ({num_años} años)
 
-st.sidebar.markdown("Haz clic en una pregunta para probarla:")
+    **Métricas Totales:**
+    - Ventas: ₡{metricas['ventas_totales']:,.0f}
+    - Transacciones: {metricas['total_ventas']:,}
+    - Clientes: {metricas['total_clientes']:,}
 
-for ejemplo in ejemplos:
-    if st.sidebar.button(ejemplo, key=f"ejemplo_{ejemplos.index(ejemplo)}", use_container_width=True):
-        # Agregar pregunta al chat
-        st.session_state.messages.append({"role": "user", "content": ejemplo})
-        st.rerun()
+    **Dimensiones:**
+    - {len(st.session_state.datos_contexto['categorias'])} categorías de productos
+    - {len(st.session_state.datos_contexto['provincias'])} provincias
+    - Top 20 productos más vendidos
+    - {len(st.session_state.datos_contexto['mensuales'])} meses de histórico
+    """)
 
 st.sidebar.markdown("---")
 
 # Estadísticas de uso
-st.sidebar.markdown("### 📊 Estadísticas de Uso")
+st.sidebar.markdown("### 💬 Uso de Sesión")
 
 if st.session_state.total_input_tokens > 0:
+    total_tokens = st.session_state.total_input_tokens + st.session_state.total_output_tokens
     st.sidebar.markdown(f"""
-    <div class="usage-stats">
-        <strong>Tokens Consumidos:</strong><br/>
-        🔹 Input: {st.session_state.total_input_tokens:,}<br/>
-        🔹 Output: {st.session_state.total_output_tokens:,}<br/>
-        🔹 Total: {st.session_state.total_input_tokens + st.session_state.total_output_tokens:,}<br/><br/>
-        <strong>Costo Estimado:</strong><br/>
-        💵 ${st.session_state.total_cost:.6f} USD
-    </div>
-    """, unsafe_allow_html=True)
+    **Tokens:** {total_tokens:,}
+    - Input: {st.session_state.total_input_tokens:,}
+    - Output: {st.session_state.total_output_tokens:,}
+
+    **Costo:** ${st.session_state.total_cost:.4f} USD
+    """)
 else:
-    st.sidebar.info("Las estadísticas aparecerán después de la primera consulta")
+    st.sidebar.info("Las estadísticas aparecerán tras la primera consulta")
 
 # Botón para limpiar historial
-if st.sidebar.button("🗑️ Limpiar Historial", use_container_width=True):
+if st.sidebar.button("🗑️ Nueva Conversación", use_container_width=True, type="primary"):
     st.session_state.messages = []
     st.session_state.total_input_tokens = 0
     st.session_state.total_output_tokens = 0
     st.session_state.total_cost = 0.0
     st.rerun()
-
-st.sidebar.markdown("---")
-
-# Información sobre el contexto
-with st.sidebar.expander("ℹ️ Datos Cargados"):
-    metricas = st.session_state.datos_contexto['metricas'].iloc[0]
-    st.markdown(f"""
-    **Contexto del Negocio:**
-    - ✅ {metricas['total_ventas']:,} ventas
-    - ✅ {metricas['total_clientes']:,} clientes
-    - ✅ {len(st.session_state.datos_contexto['categorias'])} categorías
-    - ✅ {len(st.session_state.datos_contexto['provincias'])} provincias
-    - ✅ Top 10 productos
-    - ✅ 12 meses de histórico
-    """)
 
 # ============================================================================
 # ÁREA PRINCIPAL - CHAT
@@ -533,42 +662,21 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                 })
 
 # ============================================================================
-# INFORMACIÓN INICIAL
+# MENSAJE INICIAL (solo si no hay conversación)
 # ============================================================================
 
 if len(st.session_state.messages) == 0:
-    st.markdown("""
-    ## 👋 ¡Bienvenido al Asistente IA!
+    metricas = st.session_state.datos_contexto['metricas'].iloc[0]
+    años = st.session_state.datos_contexto['anuales']
+    año_min = int(años['anio'].min())
+    año_max = int(años['anio'].max())
 
-    Puedo ayudarte a analizar los datos del negocio respondiendo preguntas en lenguaje natural.
+    st.info(f"""
+    **Asistente IA con datos históricos {año_min}-{año_max}**
 
-    ### 💬 Ejemplos de preguntas que puedes hacer:
+    Este asistente tiene acceso a {metricas['total_ventas']:,} transacciones, {metricas['total_clientes']:,} clientes y datos completos de {len(años)} años para análisis de tendencias, proyecciones y recomendaciones estratégicas.
 
-    - **Análisis de Ventas:** "¿Cómo han evolucionado las ventas en los últimos meses?"
-    - **Productos:** "¿Cuáles son los productos más vendidos y cuál es su margen?"
-    - **Geografía:** "¿Qué provincia genera más ventas?"
-    - **Categorías:** "Compara el performance de las diferentes categorías"
-    - **Métricas:** "¿Cuál es el ticket promedio por categoría?"
-    - **Recomendaciones:** "¿Qué productos deberíamos promocionar más?"
-
-    ### 🚀 Cómo empezar:
-
-    1. **Usa los ejemplos** del sidebar (←) para probar el asistente
-    2. **Escribe tu pregunta** en el cuadro de texto inferior
-    3. **Explora los datos** haciendo preguntas de seguimiento
-
-    ### 📊 Datos disponibles:
-
-    El asistente tiene acceso a datos agregados del Data Warehouse incluyendo:
-    - Ventas totales y por categoría
-    - Performance por provincia
-    - Top productos
-    - Histórico mensual (12 meses)
-    - Métricas generales del negocio
-
-    ---
-
-    **💡 Tip:** Haz preguntas específicas para obtener insights más precisos.
+    Puedes preguntar sobre ventas, productos, categorías, geografía, márgenes, proyecciones y más.
     """)
 
 st.markdown("---")
