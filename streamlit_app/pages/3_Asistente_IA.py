@@ -123,12 +123,16 @@ def cargar_datos_contexto(_conn) -> dict:
             SELECT
                 fv.venta_id,
                 fv.producto_id,
+                t.ANIO_CAL,
+                g.provincia,
                 SUM(fv.cantidad) AS total_unidades,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
+            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
             WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.producto_id
+            GROUP BY fv.venta_id, fv.producto_id, t.ANIO_CAL, g.provincia
         )
         SELECT
             p.categoria,
@@ -137,7 +141,17 @@ def cargar_datos_contexto(_conn) -> dict:
             SUM(va.monto_venta) AS ventas_totales,
             SUM(va.margen_venta) AS margen_total,
             ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
-            ROUND(AVG(va.monto_venta), 2) AS ticket_promedio
+            ROUND(AVG(va.monto_venta), 2) AS ticket_promedio,
+            SUM(CASE WHEN va.ANIO_CAL = 2023 THEN va.monto_venta ELSE 0 END) AS ventas_2023,
+            SUM(CASE WHEN va.ANIO_CAL = 2024 THEN va.monto_venta ELSE 0 END) AS ventas_2024,
+            SUM(CASE WHEN va.ANIO_CAL = 2025 THEN va.monto_venta ELSE 0 END) AS ventas_2025,
+            SUM(CASE WHEN va.provincia = 'San José' THEN va.monto_venta ELSE 0 END) AS ventas_SanJose,
+            SUM(CASE WHEN va.provincia = 'Alajuela' THEN va.monto_venta ELSE 0 END) AS ventas_Alajuela,
+            SUM(CASE WHEN va.provincia = 'Cartago' THEN va.monto_venta ELSE 0 END) AS ventas_Cartago,
+            SUM(CASE WHEN va.provincia = 'Heredia' THEN va.monto_venta ELSE 0 END) AS ventas_Heredia,
+            SUM(CASE WHEN va.provincia = 'Guanacaste' THEN va.monto_venta ELSE 0 END) AS ventas_Guanacaste,
+            SUM(CASE WHEN va.provincia = 'Puntarenas' THEN va.monto_venta ELSE 0 END) AS ventas_Puntarenas,
+            SUM(CASE WHEN va.provincia = 'Limón' THEN va.monto_venta ELSE 0 END) AS ventas_Limon
         FROM VentasAgrupadas va
         INNER JOIN dim_producto p ON va.producto_id = p.producto_id
         GROUP BY p.categoria
@@ -153,21 +167,28 @@ def cargar_datos_contexto(_conn) -> dict:
                 fv.canton_id,
                 fv.distrito_id,
                 fv.cliente_id,
+                t.ANIO_CAL,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
+            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
             WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id
+            GROUP BY fv.venta_id, fv.provincia_id, fv.canton_id, fv.distrito_id, fv.cliente_id, t.ANIO_CAL
         )
         SELECT
             g.provincia,
             COUNT(DISTINCT va.venta_id) AS num_ventas,
             SUM(va.monto_venta) AS ventas_totales,
             SUM(va.margen_venta) AS margen_total,
-            COUNT(DISTINCT va.cliente_id) AS num_clientes
+            COUNT(DISTINCT va.cliente_id) AS num_clientes,
+            SUM(CASE WHEN va.ANIO_CAL = 2023 THEN va.monto_venta ELSE 0 END) AS ventas_2023,
+            SUM(CASE WHEN va.ANIO_CAL = 2024 THEN va.monto_venta ELSE 0 END) AS ventas_2024,
+            SUM(CASE WHEN va.ANIO_CAL = 2025 THEN va.monto_venta ELSE 0 END) AS ventas_2025
         FROM VentasAgrupadas va
-        INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
-            AND va.canton_id = g.canton_id AND va.distrito_id = g.distrito_id
+        INNER JOIN dim_geografia g 
+            ON va.provincia_id = g.provincia_id
+        AND va.canton_id = g.canton_id 
+        AND va.distrito_id = g.distrito_id
         GROUP BY g.provincia
         ORDER BY ventas_totales DESC
     """
@@ -178,21 +199,30 @@ def cargar_datos_contexto(_conn) -> dict:
             SELECT
                 fv.venta_id,
                 fv.tiempo_key,
+                fv.venta_cancelada,
                 SUM(fv.cantidad) AS total_unidades,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
-            WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.tiempo_key
+            GROUP BY fv.venta_id, fv.tiempo_key, fv.venta_cancelada
         )
         SELECT
             t.ANIO_CAL AS anio,
-            COUNT(DISTINCT va.venta_id) AS num_ventas,
-            SUM(va.total_unidades) AS unidades_vendidas,
+            COUNT(DISTINCT va.venta_id) AS num_ventas_total,
+            SUM(va.total_unidades) AS unidades_total,
             SUM(va.monto_venta) AS ventas_totales,
             SUM(va.margen_venta) AS margen_total,
-            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
-            ROUND(AVG(va.monto_venta), 2) AS ticket_promedio
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 0 THEN va.venta_id END) AS num_ventas_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.total_unidades ELSE 0 END) AS unidades_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta ELSE 0 END) AS ventas_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.margen_venta ELSE 0 END) AS margen_no_canceladas,
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 1 THEN va.venta_id END) AS num_ventas_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.total_unidades ELSE 0 END) AS unidades_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.monto_venta ELSE 0 END) AS ventas_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.margen_venta ELSE 0 END) AS margen_canceladas,
+            ROUND(100.0 * SUM(CASE WHEN va.venta_cancelada = 0 THEN va.margen_venta ELSE 0 END) 
+                / NULLIF(SUM(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta ELSE 0 END), 0), 2) AS margen_porcentaje_no_canceladas,
+            ROUND(AVG(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta END), 2) AS ticket_promedio_no_canceladas
         FROM VentasAgrupadas va
         INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
         GROUP BY t.ANIO_CAL
@@ -205,22 +235,31 @@ def cargar_datos_contexto(_conn) -> dict:
             SELECT
                 fv.venta_id,
                 fv.tiempo_key,
+                fv.venta_cancelada,
                 SUM(fv.cantidad) AS total_unidades,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
-            WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.tiempo_key
+            GROUP BY fv.venta_id, fv.tiempo_key, fv.venta_cancelada
         )
         SELECT
             t.ANIO_CAL AS anio,
             t.MES_CAL AS mes,
             t.MES_NOMBRE AS mes_nombre,
-            COUNT(DISTINCT va.venta_id) AS num_ventas,
-            SUM(va.total_unidades) AS unidades_vendidas,
+            COUNT(DISTINCT va.venta_id) AS num_ventas_total,
+            SUM(va.total_unidades) AS unidades_total,
             SUM(va.monto_venta) AS ventas_totales,
             SUM(va.margen_venta) AS margen_total,
-            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 0 THEN va.venta_id END) AS num_ventas_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.total_unidades ELSE 0 END) AS unidades_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta ELSE 0 END) AS ventas_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.margen_venta ELSE 0 END) AS margen_no_canceladas,
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 1 THEN va.venta_id END) AS num_ventas_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.total_unidades ELSE 0 END) AS unidades_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.monto_venta ELSE 0 END) AS ventas_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.margen_venta ELSE 0 END) AS margen_canceladas,
+            ROUND(100.0 * SUM(CASE WHEN va.venta_cancelada = 0 THEN va.margen_venta ELSE 0 END)
+                / NULLIF(SUM(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta ELSE 0 END), 0), 2) AS margen_porcentaje_no_canceladas
         FROM VentasAgrupadas va
         INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
         GROUP BY t.ANIO_CAL, t.MES_CAL, t.MES_NOMBRE
@@ -233,12 +272,16 @@ def cargar_datos_contexto(_conn) -> dict:
             SELECT
                 fv.venta_id,
                 fv.producto_id,
+                t.ANIO_CAL,
+                g.provincia,
                 SUM(fv.cantidad) AS total_unidades,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
+            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
             WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.producto_id
+            GROUP BY fv.venta_id, fv.producto_id, t.ANIO_CAL, g.provincia
         )
         SELECT TOP 20
             p.nombre_producto,
@@ -247,7 +290,17 @@ def cargar_datos_contexto(_conn) -> dict:
             SUM(va.total_unidades) AS unidades_vendidas,
             SUM(va.monto_venta) AS ventas_totales,
             SUM(va.margen_venta) AS margen_total,
-            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+            SUM(CASE WHEN va.ANIO_CAL = 2023 THEN va.monto_venta ELSE 0 END) AS ventas_2023,
+            SUM(CASE WHEN va.ANIO_CAL = 2024 THEN va.monto_venta ELSE 0 END) AS ventas_2024,
+            SUM(CASE WHEN va.ANIO_CAL = 2025 THEN va.monto_venta ELSE 0 END) AS ventas_2025,
+            SUM(CASE WHEN va.provincia = 'San José' THEN va.monto_venta ELSE 0 END) AS ventas_SanJose,
+            SUM(CASE WHEN va.provincia = 'Alajuela' THEN va.monto_venta ELSE 0 END) AS ventas_Alajuela,
+            SUM(CASE WHEN va.provincia = 'Cartago' THEN va.monto_venta ELSE 0 END) AS ventas_Cartago,
+            SUM(CASE WHEN va.provincia = 'Heredia' THEN va.monto_venta ELSE 0 END) AS ventas_Heredia,
+            SUM(CASE WHEN va.provincia = 'Guanacaste' THEN va.monto_venta ELSE 0 END) AS ventas_Guanacaste,
+            SUM(CASE WHEN va.provincia = 'Puntarenas' THEN va.monto_venta ELSE 0 END) AS ventas_Puntarenas,
+            SUM(CASE WHEN va.provincia = 'Limón' THEN va.monto_venta ELSE 0 END) AS ventas_Limon
         FROM VentasAgrupadas va
         INNER JOIN dim_producto p ON va.producto_id = p.producto_id
         GROUP BY p.nombre_producto, p.categoria, p.precio_unitario
@@ -260,22 +313,40 @@ def cargar_datos_contexto(_conn) -> dict:
             SELECT
                 fv.venta_id,
                 fv.cliente_id,
+                t.ANIO_CAL,
+                g.provincia,
+                fv.venta_cancelada,
                 SUM(fv.cantidad) AS total_unidades,
                 SUM(fv.monto_total) AS monto_venta,
                 SUM(fv.margen) AS margen_venta
             FROM fact_ventas fv
-            WHERE fv.venta_cancelada = 0
-            GROUP BY fv.venta_id, fv.cliente_id
+            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+            GROUP BY fv.venta_id, fv.cliente_id, t.ANIO_CAL, g.provincia, fv.venta_cancelada
         )
         SELECT
-            COUNT(DISTINCT venta_id) AS total_ventas,
-            COUNT(DISTINCT cliente_id) AS total_clientes,
-            SUM(monto_venta) AS ventas_totales,
-            SUM(margen_venta) AS margen_total,
-            ROUND(100.0 * SUM(margen_venta) / NULLIF(SUM(monto_venta), 0), 2) AS margen_porcentaje,
-            AVG(monto_venta) AS ticket_promedio,
-            SUM(total_unidades) AS unidades_totales
-        FROM VentasAgrupadas
+            COUNT(DISTINCT va.venta_id) AS total_ventas,
+            COUNT(DISTINCT va.cliente_id) AS total_clientes,
+            SUM(va.monto_venta) AS ventas_totales,
+            SUM(va.margen_venta) AS margen_total,
+            ROUND(100.0 * SUM(va.margen_venta) / NULLIF(SUM(va.monto_venta), 0), 2) AS margen_porcentaje,
+            AVG(va.monto_venta) AS ticket_promedio,
+            SUM(va.total_unidades) AS unidades_totales,
+            SUM(CASE WHEN va.ANIO_CAL = 2023 THEN va.monto_venta ELSE 0 END) AS ventas_2023,
+            SUM(CASE WHEN va.ANIO_CAL = 2024 THEN va.monto_venta ELSE 0 END) AS ventas_2024,
+            SUM(CASE WHEN va.ANIO_CAL = 2025 THEN va.monto_venta ELSE 0 END) AS ventas_2025,
+            SUM(CASE WHEN va.provincia = 'San José' THEN va.monto_venta ELSE 0 END) AS ventas_SanJose,
+            SUM(CASE WHEN va.provincia = 'Alajuela' THEN va.monto_venta ELSE 0 END) AS ventas_Alajuela,
+            SUM(CASE WHEN va.provincia = 'Cartago' THEN va.monto_venta ELSE 0 END) AS ventas_Cartago,
+            SUM(CASE WHEN va.provincia = 'Heredia' THEN va.monto_venta ELSE 0 END) AS ventas_Heredia,
+            SUM(CASE WHEN va.provincia = 'Guanacaste' THEN va.monto_venta ELSE 0 END) AS ventas_Guanacaste,
+            SUM(CASE WHEN va.provincia = 'Puntarenas' THEN va.monto_venta ELSE 0 END) AS ventas_Puntarenas,
+            SUM(CASE WHEN va.provincia = 'Limón' THEN va.monto_venta ELSE 0 END) AS ventas_Limon,
+            SUM(CASE WHEN va.venta_cancelada = 0 THEN va.monto_venta ELSE 0 END) AS ventas_no_canceladas,
+            SUM(CASE WHEN va.venta_cancelada = 1 THEN va.monto_venta ELSE 0 END) AS ventas_canceladas,
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 0 THEN va.venta_id END) AS num_ventas_no_canceladas,
+            COUNT(DISTINCT CASE WHEN va.venta_cancelada = 1 THEN va.venta_id END) AS num_ventas_canceladas
+        FROM VentasAgrupadas va
     """
 
     # Productos por categoría (para análisis detallado)
@@ -320,6 +391,7 @@ def cargar_datos_contexto(_conn) -> dict:
 def formatear_datos_para_contexto(datos: dict) -> str:
     """
     Formatea los datos en un string legible para Claude con información completa de 3 años
+    Incluye análisis por año, provincia, categoría y producto
     """
     contexto = []
 
@@ -329,12 +401,18 @@ def formatear_datos_para_contexto(datos: dict) -> str:
     contexto.append(f"Ventas Totales: ₡{metricas['ventas_totales']:,.2f} | Margen: ₡{metricas['margen_total']:,.2f} ({metricas['margen_porcentaje']:.1f}%)")
     contexto.append(f"Transacciones: {metricas['total_ventas']:,} | Clientes: {metricas['total_clientes']:,} | Unidades: {metricas['unidades_totales']:,}")
     contexto.append(f"Ticket Promedio: ₡{metricas['ticket_promedio']:,.2f}")
+    contexto.append(f"Ventas No Canceladas: {metricas['num_ventas_no_canceladas']:,} | Canceladas: {metricas['num_ventas_canceladas']:,}")
     contexto.append("")
 
-    # Ventas por AÑO (tendencia multi-anual)
-    contexto.append("=== EVOLUCIÓN ANUAL ===")
+    # Ventas por AÑO (tendencia multi-anual con análisis detallado)
+    contexto.append("=== EVOLUCIÓN ANUAL DETALLADA ===")
     for _, row in datos['anuales'].iterrows():
-        contexto.append(f"{int(row['anio'])}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | Margen: {row['margen_porcentaje']:.1f}% | Ticket: ₡{row['ticket_promedio']:,.2f}")
+        anio = int(row['anio'])
+        margen_pct = 100.0 * row['margen_no_canceladas'] / max(row['ventas_no_canceladas'], 1) if row['ventas_no_canceladas'] > 0 else 0
+        ticket = row['ticket_promedio_no_canceladas'] if pd.notna(row['ticket_promedio_no_canceladas']) else 0
+        contexto.append(f"{anio}: ₡{row['ventas_no_canceladas']:,.2f} ({row['num_ventas_no_canceladas']:,} ventas) | {row['unidades_no_canceladas']:,} uds | Margen: {margen_pct:.1f}% | Ticket: ₡{ticket:,.2f}")
+        if row['num_ventas_canceladas'] > 0:
+            contexto.append(f"  → Canceladas {anio}: ₡{row['ventas_canceladas']:,.2f} ({row['num_ventas_canceladas']:,} ventas)")
 
     # Calcular crecimiento año a año
     if len(datos['anuales']) >= 2:
@@ -343,39 +421,46 @@ def formatear_datos_para_contexto(datos: dict) -> str:
         for i in range(1, len(años)):
             año_actual = años.iloc[i]
             año_anterior = años.iloc[i-1]
-            pct_change = ((año_actual['ventas_totales'] - año_anterior['ventas_totales']) / año_anterior['ventas_totales']) * 100
+            pct_change = ((año_actual['ventas_no_canceladas'] - año_anterior['ventas_no_canceladas']) / max(año_anterior['ventas_no_canceladas'], 1)) * 100
             crecimiento.append(f"{int(año_anterior['anio'])}->{int(año_actual['anio'])}: {pct_change:+.1f}%")
-        contexto.append(f"Crecimiento: {', '.join(crecimiento)}")
+        contexto.append(f"Crecimiento YoY: {', '.join(crecimiento)}")
     contexto.append("")
 
-    # Ventas por CATEGORÍA
+    # Ventas por CATEGORÍA (con desglose por año y provincia)
     contexto.append("=== PERFORMANCE POR CATEGORÍA ===")
     for _, row in datos['categorias'].iterrows():
         contexto.append(f"{row['categoria']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['unidades_vendidas']:,} uds | Margen: {row['margen_porcentaje']:.1f}%")
+        contexto.append(f"  2023: ₡{row['ventas_2023']:,.2f} | 2024: ₡{row['ventas_2024']:,.2f} | 2025: ₡{row['ventas_2025']:,.2f}")
+        contexto.append(f"  SJ: ₡{row['ventas_SanJose']:,.2f} | Alajuela: ₡{row['ventas_Alajuela']:,.2f} | Cartago: ₡{row['ventas_Cartago']:,.2f} | Heredia: ₡{row['ventas_Heredia']:,.2f} | Guanacaste: ₡{row['ventas_Guanacaste']:,.2f} | Puntarenas: ₡{row['ventas_Puntarenas']:,.2f} | Limón: ₡{row['ventas_Limon']:,.2f}")
     contexto.append("")
 
     # Productos en cada categoría
     contexto.append("=== CATÁLOGO POR CATEGORÍA ===")
     for _, row in datos['productos_categoria'].iterrows():
-        contexto.append(f"{row['categoria']}: {row['num_productos_distintos']} productos distintos")
+        contexto.append(f"{row['categoria']}: {row['num_productos_distintos']} productos distintos, {row['unidades_vendidas']:,} unidades vendidas")
     contexto.append("")
 
-    # Ventas por PROVINCIA
-    contexto.append("=== DISTRIBUCIÓN GEOGRÁFICA ===")
+    # Ventas por PROVINCIA (con desglose por año)
+    contexto.append("=== DISTRIBUCIÓN GEOGRÁFICA COMPLETA ===")
     for _, row in datos['provincias'].iterrows():
         contexto.append(f"{row['provincia']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['num_clientes']:,} clientes")
+        contexto.append(f"  2023: ₡{row['ventas_2023']:,.2f} | 2024: ₡{row['ventas_2024']:,.2f} | 2025: ₡{row['ventas_2025']:,.2f}")
     contexto.append("")
 
-    # Top 20 productos
+    # Top 20 productos (con desglose temporal y geográfico)
     contexto.append("=== TOP 20 PRODUCTOS ===")
     for idx, row in datos['productos'].iterrows():
-        contexto.append(f"{idx+1}. {row['nombre_producto']} ({row['categoria']}): ₡{row['ventas_totales']:,.2f} | {row['unidades_vendidas']:,} uds | Precio: ₡{row['precio_unitario']:,.2f} | Margen: {row['margen_porcentaje']:.1f}%")
+        contexto.append(f"{idx+1}. {row['nombre_producto']} ({row['categoria']}): ₡{row['ventas_totales']:,.2f} | {row['unidades_vendidas']:,} uds | Margen: {row['margen_porcentaje']:.1f}%")
+        contexto.append(f"   2023: ₡{row['ventas_2023']:,.2f} | 2024: ₡{row['ventas_2024']:,.2f} | 2025: ₡{row['ventas_2025']:,.2f}")
+        contexto.append(f"   SJ: ₡{row['ventas_SanJose']:,.2f} | Alajuela: ₡{row['ventas_Alajuela']:,.2f} | Cartago: ₡{row['ventas_Cartago']:,.2f}")
     contexto.append("")
 
-    # Ventas MENSUALES (tendencia detallada)
+    # Ventas MENSUALES (histórico completo con análisis de cancelaciones)
     contexto.append("=== HISTÓRICO MENSUAL COMPLETO ===")
     for _, row in datos['mensuales'].iterrows():
-        contexto.append(f"{row['mes_nombre']} {int(row['anio'])}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | Margen: {row['margen_porcentaje']:.1f}%")
+        contexto.append(f"{row['mes_nombre']} {int(row['anio'])}: ₡{row['ventas_no_canceladas']:,.2f} ({row['num_ventas_no_canceladas']:,} ventas válidas) | Margen: {row['margen_porcentaje_no_canceladas']:.1f}%")
+        if row['num_ventas_canceladas'] > 0:
+            contexto.append(f"  → Canceladas: {row['num_ventas_canceladas']} ({row['ventas_canceladas']:,.2f})")
 
     return "\n".join(contexto)
 
@@ -412,41 +497,65 @@ def inicializar_claude_client():
 def construir_system_prompt(contexto_datos: str) -> str:
     """
     Construye el prompt del sistema con instrucciones y datos completos de 3 años
+    Incluye capacidades analíticas avanzadas para temporal, geográfico y granularidad de producto
     """
-    return f"""Eres un analista de datos senior especializado en e-commerce y retail. Trabajas con datos históricos de 3 años completos de un negocio de comercio electrónico en Costa Rica.
+    return f"""Eres un analista de datos senior especializado en e-commerce y retail. Trabajas con datos históricos de 3 años completos (2023-2025) de un negocio de comercio electrónico en Costa Rica con cobertura nacional.
 
 CONTEXTO DE DATOS DISPONIBLES:
 {contexto_datos}
 
 TU ROL:
-- Analizar tendencias históricas y patrones de crecimiento usando datos de múltiples años
-- Realizar proyecciones basadas en histórico de 3 años
-- Identificar productos de alto rendimiento y oportunidades de optimización
-- Proporcionar insights sobre márgenes, rentabilidad y eficiencia operativa
-- Comparar performance entre años, categorías, provincias y productos
+- Analizar tendencias históricas y patrones de crecimiento usando datos de 3 años (2023, 2024, 2025)
+- Realizar proyecciones basadas en histórico completo y padrón de crecimiento
+- Identificar productos, categorías y regiones de alto rendimiento y oportunidades de optimización
+- Proporcionar insights sobre márgenes, rentabilidad, eficiencia operativa y análisis de cancelaciones
+- Comparar performance entre años, categorías, provincias y productos con granularidad máxima
 
-CAPACIDADES ANALÍTICAS:
-1. Análisis Temporal: Tendencias anuales, estacionalidad, crecimiento año a año
-2. Análisis de Productos: Performance individual, categorías, márgenes, rotación
-3. Análisis Geográfico: Distribución de ventas por provincia, penetración de mercado
-4. Proyecciones: Forecasting basado en tendencias históricas (regresión lineal, promedio móvil)
-5. Benchmarking: Comparaciones entre períodos, categorías y productos
-6. Análisis de Rentabilidad: Márgenes, ticket promedio, eficiencia por categoría
+DIMENSIONES ANALÍTICAS DISPONIBLES:
+1. TEMPORAL: Análisis anual completo (2023, 2024, 2025), histórico mensual, estacionalidad, crecimiento YoY
+2. GEOGRÁFICA: Desglose por 7 provincias (San José, Alajuela, Cartago, Heredia, Guanacaste, Puntarenas, Limón)
+3. PRODUCTOS: Top 20 productos con análisis de tendencia, performance por provincia y año
+4. CATEGORÍAS: Performance por categoría con desglose temporal y geográfico, conteo de productos por categoría
+5. CALIDAD: Análisis de cancelaciones por año y mes, ventas válidas vs canceladas
+
+CAPACIDADES ANALÍTICAS AVANZADAS:
+1. Análisis Temporal Multi-año: Comparaciones 2023→2024→2025, crecimiento YoY, proyecciones lineales
+2. Análisis Geográfico Granular: Penetración por provincia, disparidades regionales, oportunidades de mercado
+3. Análisis de Productos: Performance individual, elasticidad de precio, rotación, márgenes comparativos
+4. Proyecciones: Forecasting basado en CAGR de 3 años, promedio móvil, análisis de tendencias
+5. Benchmarking: Comparaciones intra-categoría, inter-provincial, temporal (mes a mes mismo período de años)
+6. Análisis de Rentabilidad: Márgenes por categoría/provincia/producto, eficiencia operativa, impacto de cancelaciones
+7. Detección de Anomalías: Identificar meses atípicos, saltos de demanda, productos en declive
+
+FORMATO DE DATOS:
+- Moneda: Colones Costarricenses (₡) siempre
+- Períodos: Años completos (2023, 2024, 2025), meses específicos, comparaciones YoY
+- Granularidad: Producto individual, categoría, provincia, nacional
+- Cancelaciones: Se reportan separadamente de ventas válidas
 
 INSTRUCCIONES DE RESPUESTA:
 - Usa SIEMPRE moneda costarricense (₡) para valores monetarios
-- Proporciona números específicos y porcentajes cuando sea relevante
-- Para proyecciones, explica la metodología (ej: "basado en crecimiento promedio de X% de los últimos 3 años")
-- Identifica patterns year-over-year para insights de estacionalidad
-- Sugiere acciones concretas basadas en los datos
-- Sé conciso pero preciso en tus análisis
+- Proporciona números específicos (no aproximados) y porcentajes con 1-2 decimales
+- Para proyecciones: "Basado en CAGR de X% de 2023-2025..." o "Suponiendo crecimiento promedio de X%..."
+- Para tendencias: Cita años específicos y direccionalidad (↑/↓)
+- Para recomendaciones: Prioriza por impacto potencial y viabilidad
+- Cuando compares años: Usa formato "2024 vs 2023: ₡X (+Y%)" o similar
+- Identifica padrón de estacionalidad mes a mes si aplica
+- Sé conciso pero preciso, evita especulación sin base en datos
 
-FORMATO DE RESPUESTAS:
-- Para datos históricos: cita años específicos y comparaciones
-- Para proyecciones: indica el método y nivel de confianza
-- Para recomendaciones: prioriza por impacto potencial
+ESTRUCTURA DE RESPUESTAS RECOMENDADA:
+- Para análisis histórico: "En 2024 se vendió ₡X, comparado con ₡Y en 2023 (crecimiento de +Z%)"
+- Para proyecciones: "Proyectamos ₡X para 2026 basado en CAGR de X% (2023-2025)"
+- Para recomendaciones: "Enfocarse en [provincia/categoría/producto] donde hay mayor oportunidad de crecimiento"
+- Para problemas: "La baja performance en [X] es debido a [causa con datos]"
 
-Responde siempre en español profesional."""
+RESTRICCIONES IMPORTANTES:
+- Solo utiliza datos provisto en el contexto de datos
+- No especules sobre causas externas sin datos que lo respalden
+- Para períodos sin datos disponibles, indica claramente la limitación
+- Si hay cancelaciones significativas, menciona su impacto en el análisis
+
+Responde siempre en español profesional de nivel ejecutivo."""
 
 def calcular_costo_tokens(input_tokens: int, output_tokens: int) -> float:
     """
@@ -485,7 +594,6 @@ if "contexto_cargado" not in st.session_state:
 
 crear_seccion_encabezado(
     "Asistente de Análisis Inteligente",
-    "Análisis de datos empresariales con IA - Consultas en lenguaje natural",
     badge_color="primary"
 )
 
@@ -502,36 +610,11 @@ if not st.session_state.contexto_cargado:
         st.session_state.contexto_cargado = True
 
 # ============================================================================
-# SIDEBAR - ESTADÍSTICAS Y CONTROLES
+# SIDEBAR - CONTROL DE GASTOS API
 # ============================================================================
 
-# Información sobre el contexto de datos
-with st.sidebar.expander("📊 Datos Disponibles", expanded=True):
-    metricas = st.session_state.datos_contexto['metricas'].iloc[0]
-    años = st.session_state.datos_contexto['anuales']
-    num_años = len(años)
-    año_min = int(años['anio'].min())
-    año_max = int(años['anio'].max())
-
-    st.markdown(f"""
-    **Período de Datos:** {año_min} - {año_max} ({num_años} años)
-
-    **Métricas Totales:**
-    - Ventas: ₡{metricas['ventas_totales']:,.0f}
-    - Transacciones: {metricas['total_ventas']:,}
-    - Clientes: {metricas['total_clientes']:,}
-
-    **Dimensiones:**
-    - {len(st.session_state.datos_contexto['categorias'])} categorías de productos
-    - {len(st.session_state.datos_contexto['provincias'])} provincias
-    - Top 20 productos más vendidos
-    - {len(st.session_state.datos_contexto['mensuales'])} meses de histórico
-    """)
-
-st.sidebar.markdown("---")
-
-# Estadísticas de uso
-st.sidebar.markdown("### 💬 Uso de Sesión")
+# Estadísticas de uso de API
+st.sidebar.markdown("### 💬 Control de Gastos - API Claude")
 
 if st.session_state.total_input_tokens > 0:
     total_tokens = st.session_state.total_input_tokens + st.session_state.total_output_tokens
@@ -668,15 +751,31 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
 if len(st.session_state.messages) == 0:
     metricas = st.session_state.datos_contexto['metricas'].iloc[0]
     años = st.session_state.datos_contexto['anuales']
+    provincias = st.session_state.datos_contexto['provincias']
+    categorias = st.session_state.datos_contexto['categorias']
     año_min = int(años['anio'].min())
     año_max = int(años['anio'].max())
 
+    # Calcular crecimiento para mensaje inicial
+    años_sorted = años.sort_values('anio')
+    if len(años_sorted) >= 2:
+        crecimiento = ((años_sorted.iloc[-1]['ventas_no_canceladas'] - años_sorted.iloc[0]['ventas_no_canceladas']) /
+                      max(años_sorted.iloc[0]['ventas_no_canceladas'], 1)) * 100
+    else:
+        crecimiento = 0
+
     st.info(f"""
-    **Asistente IA con datos históricos {año_min}-{año_max}**
+    **🤖 Asistente IA de Análisis - Datos {año_min}-{año_max}**
 
-    Este asistente tiene acceso a {metricas['total_ventas']:,} transacciones, {metricas['total_clientes']:,} clientes y datos completos de {len(años)} años para análisis de tendencias, proyecciones y recomendaciones estratégicas.
+    **Puedes preguntar sobre:**
+    - Tendencias de ventas por año, mes o temporada
+    - Rendimiento de productos y categorías (análisis comparativo y geográfico)
+    - Análisis regional: oportunidades por provincia
+    - Proyecciones basadas en patrones históricos
+    - Análisis de márgenes, rentabilidad y eficiencia
+    - Impacto de cancelaciones en el negocio
 
-    Puedes preguntar sobre ventas, productos, categorías, geografía, márgenes, proyecciones y más.
+    *Ejemplo: "¿Cuál fue el crecimiento de ventas de 2024 vs 2023?" o "¿Qué provincia tiene mayor potencial de crecimiento?"*
     """)
 
 st.markdown("---")
