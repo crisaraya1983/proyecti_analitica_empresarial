@@ -1,12 +1,3 @@
-"""
-================================================================================
-ASISTENTE IA - CLAUDE
-================================================================================
-Chat conversacional para consultas en lenguaje natural sobre datos del negocio
-Usa Claude AI de Anthropic para análisis inteligente y generación de gráficos
-================================================================================
-"""
-
 import sys
 import os
 import streamlit as st
@@ -16,7 +7,6 @@ from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Configurar paths
 project_root = os.path.dirname(os.path.dirname(__file__))
 for path in [os.path.join(project_root, 'utils'),
              os.path.join(project_root, 'modulos')]:
@@ -26,7 +16,6 @@ for path in [os.path.join(project_root, 'utils'),
 from utils.db_connection import DatabaseConnection
 from modulos.componentes import inicializar_componentes, crear_seccion_encabezado, COLORES
 
-# Intentar importar Anthropic
 try:
     from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
     ANTHROPIC_AVAILABLE = True
@@ -44,12 +33,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inicializar componentes
 inicializar_componentes()
 
 st.title("Ecommerce Cenfotec")
 
-# Estilos adicionales para chat
 st.markdown("""
 <style>
     /* Mensajes de chat */
@@ -104,7 +91,6 @@ if not ANTHROPIC_AVAILABLE:
 def get_dw_engine():
     """Obtiene SQLAlchemy engine del DW (cached)"""
     try:
-        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
         return DatabaseConnection.get_dw_engine(use_secrets=True)
     except Exception as e:
         st.error(f"Error conectando al DW: {str(e)}")
@@ -112,12 +98,6 @@ def get_dw_engine():
 
 @st.cache_data(ttl=1800)
 def cargar_datos_contexto(_conn) -> dict:
-    """
-    Carga datos agregados del DW para contexto de Claude
-    Optimizado con agregación correcta por venta_id y datos de 3 años completos
-    """
-
-    # Ventas por categoría (con agrupación correcta)
     query_categorias = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -158,7 +138,6 @@ def cargar_datos_contexto(_conn) -> dict:
         ORDER BY ventas_totales DESC
     """
 
-    # Ventas por provincia (con agrupación correcta)
     query_provincias = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -193,7 +172,6 @@ def cargar_datos_contexto(_conn) -> dict:
         ORDER BY ventas_totales DESC
     """
 
-    # Ventas por AÑO (completo - todos los años disponibles)
     query_anuales = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -229,7 +207,6 @@ def cargar_datos_contexto(_conn) -> dict:
         ORDER BY t.ANIO_CAL
     """
 
-    # Ventas MENSUALES (todos los meses de todos los años)
     query_mensuales = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -266,7 +243,6 @@ def cargar_datos_contexto(_conn) -> dict:
         ORDER BY t.ANIO_CAL, t.MES_CAL
     """
 
-    # Top 20 productos (ampliado para mejor contexto)
     query_productos = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -306,8 +282,6 @@ def cargar_datos_contexto(_conn) -> dict:
         GROUP BY p.nombre_producto, p.categoria, p.precio_unitario
         ORDER BY ventas_totales DESC
     """
-
-    # Métricas generales (con agrupación correcta)
     query_metricas = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -348,8 +322,6 @@ def cargar_datos_contexto(_conn) -> dict:
             COUNT(DISTINCT CASE WHEN va.venta_cancelada = 1 THEN va.venta_id END) AS num_ventas_canceladas
         FROM VentasAgrupadas va
     """
-
-    # Productos por categoría (para análisis detallado)
     query_productos_categoria = """
         WITH VentasAgrupadas AS (
             SELECT
@@ -371,7 +343,6 @@ def cargar_datos_contexto(_conn) -> dict:
         ORDER BY unidades_vendidas DESC
     """
 
-    # Función auxiliar para convertir tipos nullable a estándar
     def convertir_tipos_arrow_compatibles(df):
         for col in df.columns:
             if hasattr(df[col].dtype, 'numpy_dtype'):
@@ -389,13 +360,9 @@ def cargar_datos_contexto(_conn) -> dict:
     }
 
 def formatear_datos_para_contexto(datos: dict) -> str:
-    """
-    Formatea los datos en un string legible para Claude con información completa de 3 años
-    Incluye análisis por año, provincia, categoría y producto
-    """
+
     contexto = []
 
-    # Métricas generales
     metricas = datos['metricas'].iloc[0]
     contexto.append("=== RESUMEN EJECUTIVO DEL NEGOCIO ===")
     contexto.append(f"Ventas Totales: ₡{metricas['ventas_totales']:,.2f} | Margen: ₡{metricas['margen_total']:,.2f} ({metricas['margen_porcentaje']:.1f}%)")
@@ -404,7 +371,6 @@ def formatear_datos_para_contexto(datos: dict) -> str:
     contexto.append(f"Ventas No Canceladas: {metricas['num_ventas_no_canceladas']:,} | Canceladas: {metricas['num_ventas_canceladas']:,}")
     contexto.append("")
 
-    # Ventas por AÑO (tendencia multi-anual con análisis detallado)
     contexto.append("=== EVOLUCIÓN ANUAL DETALLADA ===")
     for _, row in datos['anuales'].iterrows():
         anio = int(row['anio'])
@@ -414,7 +380,6 @@ def formatear_datos_para_contexto(datos: dict) -> str:
         if row['num_ventas_canceladas'] > 0:
             contexto.append(f"  → Canceladas {anio}: ₡{row['ventas_canceladas']:,.2f} ({row['num_ventas_canceladas']:,} ventas)")
 
-    # Calcular crecimiento año a año
     if len(datos['anuales']) >= 2:
         años = datos['anuales'].sort_values('anio')
         crecimiento = []
@@ -426,7 +391,6 @@ def formatear_datos_para_contexto(datos: dict) -> str:
         contexto.append(f"Crecimiento YoY: {', '.join(crecimiento)}")
     contexto.append("")
 
-    # Ventas por CATEGORÍA (con desglose por año y provincia)
     contexto.append("=== PERFORMANCE POR CATEGORÍA ===")
     for _, row in datos['categorias'].iterrows():
         contexto.append(f"{row['categoria']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['unidades_vendidas']:,} uds | Margen: {row['margen_porcentaje']:.1f}%")
@@ -434,20 +398,17 @@ def formatear_datos_para_contexto(datos: dict) -> str:
         contexto.append(f"  SJ: ₡{row['ventas_SanJose']:,.2f} | Alajuela: ₡{row['ventas_Alajuela']:,.2f} | Cartago: ₡{row['ventas_Cartago']:,.2f} | Heredia: ₡{row['ventas_Heredia']:,.2f} | Guanacaste: ₡{row['ventas_Guanacaste']:,.2f} | Puntarenas: ₡{row['ventas_Puntarenas']:,.2f} | Limón: ₡{row['ventas_Limon']:,.2f}")
     contexto.append("")
 
-    # Productos en cada categoría
     contexto.append("=== CATÁLOGO POR CATEGORÍA ===")
     for _, row in datos['productos_categoria'].iterrows():
         contexto.append(f"{row['categoria']}: {row['num_productos_distintos']} productos distintos, {row['unidades_vendidas']:,} unidades vendidas")
     contexto.append("")
 
-    # Ventas por PROVINCIA (con desglose por año)
     contexto.append("=== DISTRIBUCIÓN GEOGRÁFICA COMPLETA ===")
     for _, row in datos['provincias'].iterrows():
         contexto.append(f"{row['provincia']}: ₡{row['ventas_totales']:,.2f} | {row['num_ventas']:,} ventas | {row['num_clientes']:,} clientes")
         contexto.append(f"  2023: ₡{row['ventas_2023']:,.2f} | 2024: ₡{row['ventas_2024']:,.2f} | 2025: ₡{row['ventas_2025']:,.2f}")
     contexto.append("")
 
-    # Top 20 productos (con desglose temporal y geográfico)
     contexto.append("=== TOP 20 PRODUCTOS ===")
     for idx, row in datos['productos'].iterrows():
         contexto.append(f"{idx+1}. {row['nombre_producto']} ({row['categoria']}): ₡{row['ventas_totales']:,.2f} | {row['unidades_vendidas']:,} uds | Margen: {row['margen_porcentaje']:.1f}%")
@@ -455,7 +416,6 @@ def formatear_datos_para_contexto(datos: dict) -> str:
         contexto.append(f"   SJ: ₡{row['ventas_SanJose']:,.2f} | Alajuela: ₡{row['ventas_Alajuela']:,.2f} | Cartago: ₡{row['ventas_Cartago']:,.2f}")
     contexto.append("")
 
-    # Ventas MENSUALES (histórico completo con análisis de cancelaciones)
     contexto.append("=== HISTÓRICO MENSUAL COMPLETO ===")
     for _, row in datos['mensuales'].iterrows():
         contexto.append(f"{row['mes_nombre']} {int(row['anio'])}: ₡{row['ventas_no_canceladas']:,.2f} ({row['num_ventas_no_canceladas']:,} ventas válidas) | Margen: {row['margen_porcentaje_no_canceladas']:.1f}%")
@@ -465,13 +425,9 @@ def formatear_datos_para_contexto(datos: dict) -> str:
     return "\n".join(contexto)
 
 def inicializar_claude_client():
-    """
-    Inicializa el cliente de Claude con API key desde secrets
-    """
     try:
         api_key = st.secrets["claude"]["api_key"]
 
-        # Verificar si es el placeholder
         if "PLACEHOLDER" in api_key:
             st.warning("""
             ⚠️ **API Key de Claude no configurada**
@@ -496,7 +452,7 @@ def inicializar_claude_client():
 
 def construir_system_prompt(contexto_datos: str) -> str:
     """
-    Construye el prompt del sistema con instrucciones y datos completos de 3 años
+    Construye el prompt del sistema con instrucciones y datos completos
     Incluye capacidades analíticas avanzadas para temporal, geográfico y granularidad de producto
     """
     return f"""Eres un analista de datos senior especializado en e-commerce y retail. Trabajas con datos históricos de 3 años completos (2023-2025) de un negocio de comercio electrónico en Costa Rica con cobertura nacional.
@@ -558,9 +514,6 @@ RESTRICCIONES IMPORTANTES:
 Responde siempre en español profesional de nivel ejecutivo."""
 
 def calcular_costo_tokens(input_tokens: int, output_tokens: int) -> float:
-    """
-    Calcula el costo estimado de una consulta
-    """
     cost_input = st.secrets["claude"]["cost_per_million_input_tokens"]
     cost_output = st.secrets["claude"]["cost_per_million_output_tokens"]
 
@@ -613,7 +566,6 @@ if not st.session_state.contexto_cargado:
 # SIDEBAR - CONTROL DE GASTOS API
 # ============================================================================
 
-# Estadísticas de uso de API
 st.sidebar.markdown("### 💬 Control de Gastos - API Claude")
 
 if st.session_state.total_input_tokens > 0:
@@ -628,7 +580,6 @@ if st.session_state.total_input_tokens > 0:
 else:
     st.sidebar.info("Las estadísticas aparecerán tras la primera consulta")
 
-# Botón para limpiar historial
 if st.sidebar.button("🗑️ Nueva Conversación", use_container_width=True, type="primary"):
     st.session_state.messages = []
     st.session_state.total_input_tokens = 0
@@ -640,38 +591,30 @@ if st.sidebar.button("🗑️ Nueva Conversación", use_container_width=True, ty
 # ÁREA PRINCIPAL - CHAT
 # ============================================================================
 
-# Mostrar mensajes del historial
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Input de chat
 if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
 
-    # Verificar que Claude esté configurado
     client = inicializar_claude_client()
 
     if client is None:
         st.error("⚠️ Claude no está configurado. Por favor, agrega tu API key a secrets.toml")
         st.stop()
 
-    # Agregar mensaje del usuario
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Mostrar mensaje del usuario
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Generar respuesta
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
 
         with st.spinner("Analizando datos..."):
             try:
-                # Construir mensajes para Claude
                 system_prompt = construir_system_prompt(st.session_state.contexto_str)
 
-                # Preparar historial de conversación
                 messages_for_claude = []
                 for msg in st.session_state.messages:
                     messages_for_claude.append({
@@ -679,7 +622,6 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                         "content": msg["content"]
                     })
 
-                # Llamar a Claude API
                 response = client.messages.create(
                     model=st.secrets["claude"]["model"],
                     max_tokens=int(st.secrets["claude"]["max_tokens"]),
@@ -688,19 +630,15 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                     messages=messages_for_claude
                 )
 
-                # Extraer respuesta
                 assistant_message = response.content[0].text
 
-                # Mostrar respuesta
                 message_placeholder.markdown(assistant_message)
 
-                # Guardar en historial
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": assistant_message
                 })
 
-                # Actualizar estadísticas
                 input_tokens = response.usage.input_tokens
                 output_tokens = response.usage.output_tokens
 
@@ -710,7 +648,6 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                 costo = calcular_costo_tokens(input_tokens, output_tokens)
                 st.session_state.total_cost += costo
 
-                # Mostrar estadísticas de esta consulta
                 st.info(f"""
                 **Consulta procesada:**
                 - Tokens input: {input_tokens:,}
@@ -722,12 +659,10 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                 error_msg = f"❌ Error al procesar consulta: {str(e)}"
                 st.error(error_msg)
 
-                # Detalles del error
                 if "authentication" in str(e).lower():
                     st.warning("""
                     **Error de Autenticación:**
                     - Verifica que tu API key sea válida
-                    - Asegúrate de tener créditos disponibles en tu cuenta de Anthropic
                     """)
                 elif "rate" in str(e).lower():
                     st.warning("""
@@ -738,14 +673,13 @@ if prompt := st.chat_input("Escribe tu pregunta sobre el negocio..."):
                 else:
                     st.warning("Revisa los logs para más detalles del error")
 
-                # Guardar error en historial
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": error_msg
                 })
 
 # ============================================================================
-# MENSAJE INICIAL (solo si no hay conversación)
+# MENSAJE INICIAL
 # ============================================================================
 
 if len(st.session_state.messages) == 0:
@@ -756,7 +690,6 @@ if len(st.session_state.messages) == 0:
     año_min = int(años['anio'].min())
     año_max = int(años['anio'].max())
 
-    # Calcular crecimiento para mensaje inicial
     años_sorted = años.sort_values('anio')
     if len(años_sorted) >= 2:
         crecimiento = ((años_sorted.iloc[-1]['ventas_no_canceladas'] - años_sorted.iloc[0]['ventas_no_canceladas']) /

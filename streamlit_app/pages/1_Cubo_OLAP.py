@@ -1,12 +1,3 @@
-"""
-================================================================================
-PÁGINA STREAMLIT: CUBO OLAP - EXPLORACIÓN MULTIDIMENSIONAL
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Propósito: Interfaz para explorar el cubo OLAP con operaciones multidimensionales
-================================================================================
-"""
-
 import streamlit as st
 import sys
 import os
@@ -15,7 +6,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-# Configurar paths
 project_root = os.path.dirname(os.path.dirname(__file__))
 for path in [os.path.join(project_root, 'utils'), os.path.join(project_root, 'OLAP'), os.path.join(project_root, 'modulos')]:
     if path not in sys.path:
@@ -25,7 +15,6 @@ from utils.db_connection import DatabaseConnection
 from OLAP.cubo_olap import CuboOLAP
 from modulos.componentes import inicializar_componentes, crear_seccion_encabezado
 
-# Configuración de página
 st.set_page_config(
     page_title="Cubo OLAP",
     page_icon="📊",
@@ -33,16 +22,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Inicializar componentes y estilos
 inicializar_componentes()
 
 st.title("Ecommerce Cenfotec")
 
-# Título usando componente
 crear_seccion_encabezado(
     "Cubo OLAP - Análisis Multidimensional",
-    #"Exploración interactiva del Data Warehouse con operaciones OLAP",
-    #badge="DW",
     badge_color="primary"
 )
 
@@ -54,7 +39,6 @@ crear_seccion_encabezado(
 def get_olap_cube():
     """Obtiene instancia del cubo OLAP (cached)"""
     try:
-        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
         engine = DatabaseConnection.get_dw_engine(use_secrets=True)
         return CuboOLAP(engine)
     except Exception as e:
@@ -129,12 +113,11 @@ with st.spinner("Cargando métricas globales..."):
         resumen = get_resumen_negocio(cubo)
 
         if resumen:
-            # Primera fila: 4 métricas principales
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
                 st.metric(
-                    "Total Ventas (con canceladas)",
+                    "Total Ventas (incluye canceladas)",
                     f"₡{resumen.get('total_ventas_con_canceladas', 0):,.2f}",
                     help="Monto total de todas las ventas incluyendo canceladas"
                 )
@@ -160,7 +143,6 @@ with st.spinner("Cargando métricas globales..."):
                     help="Monto de ventas excluyendo cancelaciones"
                 )
 
-            # Segunda fila: 4 métricas adicionales
             col5, col6, col7, col8 = st.columns(4)
 
             with col5:
@@ -239,7 +221,6 @@ with tab1:
             )
 
         with col2:
-            # Obtener valores únicos
             if dimension == "provincia":
                 query = "SELECT DISTINCT provincia FROM dim_geografia ORDER BY provincia"
             elif dimension == "categoria":
@@ -261,13 +242,11 @@ with tab1:
         if st.button("Analizar", use_container_width=True, type="primary"):
             with st.spinner(f"Analizando {dimension_labels[dimension]}: {valor_seleccionado}..."):
                 try:
-                    # Obtener datos resumidos
                     df_resumen = ejecutar_slice(cubo, dimension, valor_seleccionado)
 
                     if not df_resumen.empty:
                         row = df_resumen.iloc[0]
 
-                        # Mostrar KPIs principales en métricas
                         st.markdown("### Indicadores Clave")
                         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
 
@@ -301,7 +280,6 @@ with tab1:
 
                         st.markdown("---")
 
-                        # Obtener desglose detallado
                         df_drill = ejecutar_slice_drill_down(cubo, dimension, valor_seleccionado)
 
                         if not df_drill.empty:
@@ -310,11 +288,10 @@ with tab1:
                             col_chart, col_table = st.columns([3, 2])
 
                             with col_chart:
-                                # Determinar qué mostrar según la dimensión
                                 if dimension == "provincia":
-                                    x_col, title = 'canton', f'Top 15 Cantones en {valor_seleccionado}'
+                                    x_col, title = 'canton', f'Top Cantones en {valor_seleccionado}'
                                 elif dimension == "categoria":
-                                    x_col, title = 'producto', f'Top 15 Productos en {valor_seleccionado}'
+                                    x_col, title = 'producto', f'Top Productos en {valor_seleccionado}'
                                 elif dimension == "almacen":
                                     x_col, title = 'categoria', f'Categorías en {valor_seleccionado}'
                                 elif dimension == "anio":
@@ -344,7 +321,6 @@ with tab1:
 
                             with col_table:
                                 st.markdown("**Resumen Numérico**")
-                                # Mostrar tabla con formato
                                 df_display = df_drill.copy()
                                 if 'total_ventas' in df_display.columns:
                                     df_display['total_ventas'] = df_display['total_ventas'].apply(lambda x: f"₡{x:,.2f}")
@@ -357,17 +333,14 @@ with tab1:
 
                         st.markdown("---")
 
-                        # Tabla de resumen completo
                         with st.expander("Ver Datos Detallados"):
                             df_resumen_display = df_resumen.copy()
-                            # Formatear columnas numéricas
                             for col in df_resumen_display.columns:
                                 if col == 'dimension_value':
-                                    continue  # Mantener dimensión sin formato
+                                    continue 
                                 elif 'porcentaje' in col.lower() or 'margen_porcentaje' == col:
                                     df_resumen_display[col] = df_resumen_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
                                 elif df_resumen_display[col].dtype in ['float64', 'int64']:
-                                    # Formatear con separador de miles
                                     df_resumen_display[col] = df_resumen_display[col].apply(
                                         lambda x: f"{x:,.2f}" if isinstance(x, float) else f"{x:,}" if pd.notna(x) else ""
                                     )
@@ -385,7 +358,7 @@ with tab1:
         st.error(f"Error: {str(e)}")
 
 # ============================================================================
-# TAB 2: ANÁLISIS MULTIDIMENSIONAL (antes DICE)
+# TAB 2: ANÁLISIS MULTIDIMENSIONAL
 # ============================================================================
 
 with tab2:
@@ -443,21 +416,16 @@ with tab2:
         if st.button("Aplicar Filtros y Analizar", use_container_width=True, type="primary"):
             with st.spinner("Procesando análisis multidimensional..."):
                 try:
-                    # Convertir dict a tuple para caché
                     filters_tuple = tuple(sorted(filters.items()))
                     df = ejecutar_dice(cubo, filters_tuple)
 
                     if not df.empty:
-                        # Debug: Mostrar columnas disponibles (temporal)
-                        # st.write("Columnas disponibles:", df.columns.tolist())
 
-                        # Mostrar KPIs principales
                         st.markdown("### Resultados del Análisis")
 
                         col_k1, col_k2, col_k3, col_k4 = st.columns(4)
 
                         with col_k1:
-                            # Usar cantidad_ordenes si existe, sino usar cantidad_transacciones (backward compatibility)
                             ordenes_col = 'cantidad_ordenes' if 'cantidad_ordenes' in df.columns else 'cantidad_transacciones'
                             st.metric(
                                 "Órdenes Totales",
@@ -491,27 +459,22 @@ with tab2:
 
                         st.markdown("---")
 
-                        # Gráfico mejorado
                         if 'mes_nombre' in df.columns and 'total_ventas' in df.columns:
                             st.markdown("### Evolución Temporal")
 
-                            # Determinar columna de órdenes
                             ordenes_col = 'cantidad_ordenes' if 'cantidad_ordenes' in df.columns else 'cantidad_transacciones'
 
-                            # Agrupar por año y mes para el gráfico
                             df_mes = df.groupby(['anio', 'mes', 'mes_nombre'], as_index=False).agg({
                                 'total_ventas': 'sum',
                                 'total_margen': 'sum',
                                 ordenes_col: 'sum'
                             }).sort_values(['anio', 'mes'])
 
-                            # Verificar cuántos años únicos hay
                             años_unicos = df_mes['anio'].unique()
 
                             fig = go.Figure()
 
                             if len(años_unicos) == 1:
-                                # UN SOLO AÑO: Gráfico simple con barras y línea
                                 fig.add_trace(go.Bar(
                                     x=df_mes['mes_nombre'],
                                     y=df_mes['total_ventas'],
@@ -521,7 +484,6 @@ with tab2:
                                     customdata=df_mes[ordenes_col]
                                 ))
 
-                                # Línea de ganancia
                                 fig.add_trace(go.Scatter(
                                     x=df_mes['mes_nombre'],
                                     y=df_mes['total_margen'],
@@ -539,30 +501,22 @@ with tab2:
                                 title = f'Ventas y Ganancia por Mes - {años_unicos[0]}'
 
                             else:
-                                # MÚLTIPLES AÑOS: Gráfico con barras apiladas (stacked) por año
                                 colores_años = ['#3498db', '#e74c3c', '#9b59b6', '#f39c12', '#1abc9c']
                                 colores_ganancia = ['#2ecc71', '#27ae60', '#16a085', '#d4ac0d', '#117a65']
 
-                                # Asegurar que tenemos mes_numero para ordenar correctamente
-                                # Crear etiqueta compuesta: "MES_NOMBRE (mes_numero)"
                                 df_mes['mes_label'] = df_mes['mes_nombre'] + ' (' + df_mes['mes'].astype(str) + ')'
 
-                                # Crear un DataFrame pivoteado para facilitar el stacking
                                 df_pivot = df_mes.pivot(index='mes', columns='anio', values='total_ventas').fillna(0)
                                 df_pivot_margen = df_mes.pivot(index='mes', columns='anio', values='total_margen').fillna(0)
 
-                                # Crear mapeo de mes número a nombre para el eje X
                                 mes_map = df_mes.groupby('mes')['mes_nombre'].first().to_dict()
 
-                                # Asegurar que están ordenados por número de mes
                                 df_pivot = df_pivot.sort_index()
                                 df_pivot_margen = df_pivot_margen.sort_index()
 
-                                # Convertir índice de número a nombre para visualización
                                 df_pivot.index = df_pivot.index.map(lambda x: mes_map.get(x, str(x)))
                                 df_pivot_margen.index = df_pivot_margen.index.map(lambda x: mes_map.get(x, str(x)))
 
-                                # Agregar barras apiladas por año
                                 for idx, año in enumerate(sorted(años_unicos)):
                                     if año in df_pivot.columns:
                                         color_bar = colores_años[idx % len(colores_años)]
@@ -575,21 +529,16 @@ with tab2:
                                             hovertemplate=f'<b>%{{x}} {int(año)}</b><br>Ventas: ₡%{{y:,.2f}}<extra></extra>'
                                         ))
 
-                                # Agregar líneas de ganancia por año
-                                # Cada línea debe posicionarse dentro de su segmento de barra apilada
                                 for idx, año in enumerate(sorted(años_unicos)):
                                     if año in df_pivot_margen.columns and año in df_pivot.columns:
                                         color_line = colores_ganancia[idx % len(colores_ganancia)]
 
-                                        # Calcular la base acumulada (suma de años anteriores)
                                         años_anteriores = sorted(años_unicos)[:idx]
                                         if años_anteriores:
                                             y_base = df_pivot[[a for a in años_anteriores if a in df_pivot.columns]].sum(axis=1)
                                         else:
                                             y_base = 0
 
-                                        # La línea se posiciona en el medio del segmento de este año
-                                        # y_base + (mitad del segmento de ventas del año)
                                         y_position = y_base + (df_pivot[año] / 2)
 
                                         fig.add_trace(go.Scatter(
@@ -608,7 +557,7 @@ with tab2:
                                         ))
 
                                 title = 'Ventas y Ganancia por Mes (Comparativa por Año)'
-                                fig.update_layout(barmode='stack')  # Barras apiladas
+                                fig.update_layout(barmode='stack') 
 
                             fig.update_layout(
                                 title=title,
@@ -630,13 +579,11 @@ with tab2:
 
                         st.markdown("---")
 
-                        # Tabla de resultados limitada a 100 registros para visualización
                         st.markdown("### Tabla de Resultados Detallados")
                         st.caption(f"Mostrando los primeros 100 de {len(df):,} registros totales")
 
                         df_display = df.head(100).copy()
 
-                        # Formatear valores numéricos
                         for col in df_display.columns:
                             if 'porcentaje' in col.lower():
                                 df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "")
@@ -647,7 +594,6 @@ with tab2:
 
                         st.dataframe(df_display, use_container_width=True, height=400)
 
-                        # Opción para descargar datos completos
                         with st.expander("📥 Descargar Datos Completos"):
                             st.download_button(
                                 label="Descargar CSV con todos los registros",
@@ -705,7 +651,6 @@ with tab3:
                     df = get_ventas_tiempo(cubo, gran_map[granularidad])
 
                     if not df.empty:
-                        # GRÁFICOS PRIMERO
                         col1, col2 = st.columns(2)
 
                         with col1:
@@ -736,11 +681,9 @@ with tab3:
 
                         st.markdown("---")
 
-                        # TABLA CON DATOS FORMATEADOS DESPUÉS
                         st.markdown("### Datos Detallados")
                         df_display = df.copy()
 
-                        # Formatear columnas numéricas
                         for col in df_display.columns:
                             if col in ['total_ventas', 'promedio_venta', 'total_margen']:
                                 df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
@@ -772,15 +715,13 @@ with tab3:
                     df = get_ventas_region(cubo, nivel_map[nivel_geo])
 
                     if not df.empty:
-                        # GRÁFICOS PRIMERO
                         col1, col2 = st.columns(2)
 
-                        # Determinar qué columna usar según el nivel
                         if nivel_geo == "Provincia":
                             y_col = 'provincia'
                         elif nivel_geo == "Cantón":
                             y_col = 'canton'
-                        else:  # Distrito
+                        else:
                             y_col = 'distrito'
 
                         with col1:
@@ -805,12 +746,9 @@ with tab3:
                             st.plotly_chart(fig, use_container_width=True)
 
                         st.markdown("---")
-
-                        # TABLA CON DATOS FORMATEADOS DESPUÉS
                         st.markdown("### Datos Detallados")
                         df_display = df.copy()
 
-                        # Formatear columnas numéricas
                         for col in df_display.columns:
                             if col in ['total_ventas', 'promedio_venta', 'total_margen']:
                                 df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
@@ -850,7 +788,6 @@ with tab3:
                         y_col = 'cliente'
 
                     if not df.empty:
-                        # GRÁFICO PRIMERO
                         fig = px.bar(
                             df,
                             x=col_sort,
@@ -864,11 +801,9 @@ with tab3:
 
                         st.markdown("---")
 
-                        # TABLA CON DATOS FORMATEADOS DESPUÉS
                         st.markdown("### Datos Detallados")
                         df_display = df.copy()
 
-                        # Formatear columnas numéricas
                         for col in df_display.columns:
                             if col in ['total_ventas', 'total_gasto', 'promedio_compra', 'compra_maxima', 'total_margen', 'margen_generado', 'precio_unitario', 'costo_unitario']:
                                 df_display[col] = df_display[col].apply(lambda x: f"₡{x:,.2f}" if pd.notna(x) else "")
@@ -908,7 +843,6 @@ with tab4:
                 try:
                     comportamiento = get_comportamiento_web(cubo)
 
-                    # Métricas Generales en la parte superior
                     if 'eventos_por_tipo' in comportamiento and not comportamiento['eventos_por_tipo'].empty:
                         df_eventos = comportamiento['eventos_por_tipo']
 
@@ -929,7 +863,6 @@ with tab4:
 
                         st.markdown("---")
 
-                        # Gráficos principales
                         col1, col2 = st.columns(2)
 
                         with col1:
@@ -958,7 +891,6 @@ with tab4:
                             fig.update_xaxes(tickangle=-45)
                             st.plotly_chart(fig, use_container_width=True)
 
-                    # Análisis por Dispositivo y Navegador (consolidado)
                     st.markdown("---")
                     st.markdown("### Análisis de Plataformas")
 
@@ -988,7 +920,6 @@ with tab4:
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                    # Productos Más Vistos (simplificado)
                     if 'productos_vistos' in comportamiento and not comportamiento['productos_vistos'].empty:
                         st.markdown("---")
                         st.markdown("### Top 10 Productos Más Vistos")
@@ -1016,7 +947,6 @@ with tab4:
                 try:
                     busquedas = get_analisis_busquedas(cubo)
 
-                    # Resumen General (simplificado)
                     if 'resumen' in busquedas and not busquedas['resumen'].empty:
                         resumen = busquedas['resumen'].iloc[0]
 
@@ -1032,11 +962,9 @@ with tab4:
 
                         st.markdown("---")
 
-                    # Gráficos principales consolidados
                     col1, col2 = st.columns(2)
 
                     with col1:
-                        # Búsquedas por Dispositivo
                         if 'busquedas_dispositivo' in busquedas and not busquedas['busquedas_dispositivo'].empty:
                             st.markdown("### Distribución por Dispositivo")
                             df_dispositivo = busquedas['busquedas_dispositivo']
@@ -1049,7 +977,6 @@ with tab4:
                             st.plotly_chart(fig, use_container_width=True)
 
                     with col2:
-                        # Búsquedas por Navegador
                         if 'busquedas_navegador' in busquedas and not busquedas['busquedas_navegador'].empty:
                             st.markdown("### Top 5 Navegadores")
                             df_navegador = busquedas['busquedas_navegador']
@@ -1062,7 +989,6 @@ with tab4:
                             )
                             st.plotly_chart(fig, use_container_width=True)
 
-                    # Productos Más Buscados (simplificado)
                     if 'productos_buscados' in busquedas and not busquedas['productos_buscados'].empty:
                         st.markdown("---")
                         st.markdown("### Top 10 Productos Más Buscados")

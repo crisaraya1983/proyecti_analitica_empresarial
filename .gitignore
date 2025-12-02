@@ -10,6 +10,7 @@ Datos_BD_Relacional/
 Modelo_Dimensional/
 scripts_basedatos_relacional/
 scripts_ajuste_precios/
+streamlit_app/pages/4_Analisis_Interactivo.py
 
 # ====================
 # SECRETS Y CREDENCIALES

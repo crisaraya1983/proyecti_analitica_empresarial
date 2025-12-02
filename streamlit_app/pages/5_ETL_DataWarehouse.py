@@ -1,20 +1,9 @@
-"""
-================================================================================
-PÁGINA ETL - CARGA DE DATA WAREHOUSE
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Interfaz Streamlit para ejecutar y monitorear el proceso ETL
-================================================================================
-"""
-
 import streamlit as st
 import sys
 import os
 from datetime import datetime
 import pandas as pd
 
-# Agregar rutas al path
 project_root = os.path.dirname(os.path.dirname(__file__))
 etl_path = os.path.join(project_root, 'ETL')
 utils_path = os.path.join(project_root, 'utils')
@@ -24,25 +13,21 @@ for path in [etl_path, utils_path, modulos_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-# Importar módulos
 from ETL.etl_pipeline import ETLPipeline
 from ETL.etl_logger import ETLLogger
 from utils.db_connection import DatabaseConnection
 from modulos.componentes import inicializar_componentes, crear_seccion_encabezado
 
-# Configuración de la página
 st.set_page_config(
     page_title="ETL Data Warehouse",
     page_icon="🔄",
     layout="wide"
 )
 
-# Inicializar componentes y estilos
 inicializar_componentes()
 
 st.title("Ecommerce Cenfotec")
 
-# Título usando componente
 crear_seccion_encabezado(
     "ETL - Carga de Data Warehouse",
     "Proceso de extracción, transformación y carga desde OLTP hacia DW",
@@ -50,7 +35,6 @@ crear_seccion_encabezado(
     badge_color="warning"
 )
 
-# Sidebar con información
 with st.sidebar:
     st.header("Información del ETL")
     st.markdown("""
@@ -87,7 +71,6 @@ with st.sidebar:
                 st.error(f"Error probando conexiones: {str(e)}")
 
 
-# Tabs principales
 tab1, tab2, tab3 = st.tabs(["Ejecutar ETL", "Historial", "Métricas"])
 
 # ============================================================================
@@ -108,18 +91,14 @@ with tab1:
 
     st.markdown("---")
 
-    # Botón para ejecutar ETL
     if st.button("▶️ INICIAR PROCESO ETL", type="primary", use_container_width=True):
 
-        # Contenedor para progreso
         progress_container = st.container()
 
         with progress_container:
-            # Barra de progreso
             progress_bar = st.progress(0)
             status_text = st.empty()
 
-            # Tabs para logs
             log_tab1, log_tab2, log_tab3 = st.tabs(["📝 Logs Generales", "📊 Dimensiones", "📈 Hechos"])
 
             with log_tab1:
@@ -131,33 +110,27 @@ with tab1:
             with log_tab3:
                 log_hechos = st.empty()
 
-            # Iniciar ETL
             try:
                 status_text.text("🔄 Iniciando proceso ETL...")
                 progress_bar.progress(5)
 
-                # Crear pipeline
                 pipeline = ETLPipeline(use_secrets=True)
 
-                # Conectar
                 status_text.text("🔌 Conectando a bases de datos...")
                 progress_bar.progress(10)
                 pipeline.conectar_bases_datos()
 
-                # Validar prerequisitos
                 status_text.text("✅ Validando prerequisitos...")
                 progress_bar.progress(15)
                 if not pipeline.validar_prerequisitos():
                     st.error("❌ Los prerequisitos no se cumplieron. Revisa los logs.")
                     st.stop()
 
-                # Fase 1: Dimensiones
                 status_text.text("📊 Cargando dimensiones...")
                 progress_bar.progress(20)
                 pipeline.ejecutar_dimensiones()
                 progress_bar.progress(50)
 
-                # Mostrar resultados de dimensiones
                 dim_data = []
                 for dim_nombre, (extraidos, insertados) in pipeline.results['dimensiones'].items():
                     dim_data.append({
@@ -170,13 +143,11 @@ with tab1:
                     st.success("✅ Dimensiones cargadas")
                     st.dataframe(pd.DataFrame(dim_data), use_container_width=True)
 
-                # Fase 2: Hechos
                 status_text.text("📈 Cargando tablas de hechos...")
                 progress_bar.progress(60)
                 pipeline.ejecutar_hechos()
                 progress_bar.progress(90)
 
-                # Mostrar resultados de hechos
                 fact_data = []
                 for fact_nombre, (extraidos, insertados) in pipeline.results['hechos'].items():
                     fact_data.append({
@@ -189,12 +160,10 @@ with tab1:
                     st.success("✅ Tablas de hechos cargadas")
                     st.dataframe(pd.DataFrame(fact_data), use_container_width=True)
 
-                # Validar resultados
                 status_text.text("✔️ Validando resultados...")
                 pipeline.validar_resultados()
                 progress_bar.progress(95)
 
-                # Finalizar
                 pipeline.results['success'] = True
                 pipeline.results['fin'] = datetime.now()
                 pipeline.results['duracion_segundos'] = int(
@@ -204,10 +173,8 @@ with tab1:
                 progress_bar.progress(100)
                 status_text.text("✅ Proceso ETL completado exitosamente!")
 
-                # Desconectar
                 pipeline.desconectar_bases_datos()
 
-                # Resumen final
                 st.markdown("---")
                 st.success("🎉 ¡PROCESO ETL COMPLETADO EXITOSAMENTE!")
 
@@ -231,7 +198,6 @@ with tab1:
                 with col4:
                     st.metric("Tablas Cargadas", "13")
 
-                # Logs generales
                 with log_general:
                     st.info(f"""
                     **Resumen del Proceso:**
@@ -277,17 +243,13 @@ with tab2:
         conn_dw.close()
 
         if logs:
-            # Convertir a DataFrame
             df_logs = pd.DataFrame(logs)
 
-            # Formatear columnas (manejar valores NULL)
             df_logs['fecha_inicio'] = pd.to_datetime(df_logs['fecha_inicio'])
             df_logs['fecha_fin'] = pd.to_datetime(df_logs['fecha_fin'], errors='coerce')
 
-            # Si duracion_segundos es NULL, calcularlo o dejarlo en blanco
             df_logs['duracion_segundos'] = df_logs['duracion_segundos'].fillna(0)
 
-            # Mostrar tabla
             st.dataframe(
                 df_logs[[
                     'log_id', 'proceso_nombre', 'tabla_destino', 'fecha_inicio',
@@ -305,7 +267,6 @@ with tab2:
                 }
             )
 
-            # Gráfico de ejecuciones
             st.subheader("📊 Ejecuciones Recientes")
 
             df_etl_completo = df_logs[df_logs['proceso_nombre'] == 'ETL_COMPLETO'].copy()
@@ -341,7 +302,6 @@ with tab3:
         conn_dw = DatabaseConnection.get_dw_connection(use_secrets=True)
         cursor = conn_dw.cursor()
 
-        # Métricas de dimensiones
         st.subheader("📊 Dimensiones")
 
         dim_metrics = []
@@ -361,7 +321,6 @@ with tab3:
         with col2:
             st.dataframe(df_dim.tail(5), use_container_width=True)
 
-        # Métricas de hechos
         st.subheader("📈 Tablas de Hechos")
 
         fact_metrics = []
@@ -373,12 +332,10 @@ with tab3:
         df_fact = pd.DataFrame(fact_metrics)
         st.dataframe(df_fact, use_container_width=True)
 
-        # Métricas de negocio
         st.subheader("💰 Métricas de Negocio")
 
         col1, col2, col3 = st.columns(3)
 
-        # Total ventas (contar ventas únicas, no detalles)
         cursor.execute("""
             SELECT
                 COUNT(DISTINCT venta_id) as total_ventas,
@@ -398,7 +355,6 @@ with tab3:
         with col3:
             st.metric("Ticket Promedio", f"₡{row[2]:,.2f}" if row[2] else "₡0.00")
 
-        # Eventos web
         cursor.execute("""
             SELECT
                 COUNT(*) as total_eventos,

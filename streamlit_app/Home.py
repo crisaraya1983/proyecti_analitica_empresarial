@@ -76,7 +76,7 @@ engine = get_dw_engine()
 kpi_calc = KPICalculator(engine)
 
 # ============================================================================
-# SECCIÓN 1: KPIs PRINCIPALES (6 MÉTRICAS)
+# SECCIÓN 1: KPIs PRINCIPALES
 # ============================================================================
 
 st.markdown("## KPIs Principales - 2025 (Hasta Octubre)")
@@ -84,8 +84,7 @@ st.markdown("## KPIs Principales - 2025 (Hasta Octubre)")
 with st.spinner("Cargando KPIs principales..."):
     kpis_2025 = kpi_calc.calcular_kpis_principales_2025(mes_hasta=10)
 
-    # Primera fila: 3 KPIs principales
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3, vertical_alignment="center")
 
     with col1:
         st.metric(
@@ -146,8 +145,7 @@ st.markdown("---")
 
 st.markdown("## Balanced Scorecard")
 
-# Crear 2x2 grid para las 4 perspectivas
-col_left, col_right = st.columns(2)
+col_left, col_right = st.columns(2, gap="large")
 
 # ====== PERSPECTIVA FINANCIERA ======
 with col_left:
@@ -394,7 +392,7 @@ with col_right:
 
 st.markdown("---")
 
-col_left2, col_right2 = st.columns(2)
+col_left2, col_right2 = st.columns(2, gap="large")
 
 # ====== PERSPECTIVA DE CLIENTES ======
 with col_left2:
@@ -614,7 +612,7 @@ with col_right2:
 
 st.markdown("---")
 
-col_comportamiento, col_busquedas = st.columns(2)
+col_comportamiento, col_busquedas = st.columns(2, gap="large")
 
 # ====== PERSPECTIVA DE COMPORTAMIENTO WEB ======
 with col_comportamiento:

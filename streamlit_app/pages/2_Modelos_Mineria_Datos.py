@@ -1,14 +1,3 @@
-"""
-================================================================================
-PÁGINA STREAMLIT - MODELOS DE MINERÍA DE DATOS
-================================================================================
-Visualización y ejecución de modelos de Machine Learning:
-- Clustering (Segmentación de Clientes)
-- Regresión (Predicción de Ventas)
-- Proyecciones (Series Temporales)
-================================================================================
-"""
-
 import sys
 import os
 import streamlit as st
@@ -18,7 +7,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Configurar paths
 project_root = os.path.dirname(os.path.dirname(__file__))
 for path in [os.path.join(project_root, 'utils'),
              os.path.join(project_root, 'modulos')]:
@@ -31,7 +19,6 @@ from modulos.regression import ModeloRegresionVentas
 from modulos.proyecciones import ModeloProyeccionVentas
 from modulos.componentes import inicializar_componentes, crear_seccion_encabezado, COLORES
 
-# Configuración de página
 st.set_page_config(
     page_title="Modelos de Minería de Datos",
     page_icon="🤖",
@@ -39,7 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inicializar componentes
 inicializar_componentes()
 
 st.title("Ecommerce Cenfotec")
@@ -53,7 +39,6 @@ st.title("Ecommerce Cenfotec")
 def get_dw_engine():
     """Obtiene SQLAlchemy engine del DW (cached)"""
     try:
-        # Usar SQLAlchemy engine en lugar de pyodbc para evitar warnings de pandas
         return DatabaseConnection.get_dw_engine(use_secrets=True)
     except Exception as e:
         st.error(f"Error conectando al DW: {str(e)}")
@@ -72,7 +57,6 @@ modelo_seleccionado = st.sidebar.selectbox(
      "Proyecciones - Series Temporales"]
 )
 
-# Obtener engine
 engine = get_dw_engine()
 
 # ============================================================================
@@ -116,10 +100,8 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
         with st.spinner("Entrenando modelo de clustering..."):
 
             try:
-                # Inicializar modelo
                 segmentador = SegmentacionClientes(engine)
 
-                # Extraer datos
                 st.write("### Paso 1: Extrayendo datos de clientes...")
                 df_clientes = segmentador.extraer_datos_clientes(limite=limite_clientes)
                 st.success(f"{len(df_clientes)} clientes extraídos")
@@ -127,12 +109,10 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 with st.expander("Ver muestra de datos"):
                     st.dataframe(df_clientes.head(10), use_container_width=True)
 
-                # Preparar features
                 st.write("### Paso 2: Preparando características...")
                 df_original, df_features = segmentador.preparar_features(df_clientes)
                 st.success(f"{df_features.shape[1]} características preparadas")
 
-                # Buscar número óptimo de clusters
                 st.write("### Paso 3: Buscando número óptimo de clusters...")
 
                 resultados_k = segmentador.encontrar_numero_clusters_optimo(
@@ -141,7 +121,6 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                     k_max=k_max
                 )
 
-                # Visualizar métricas de k
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
@@ -198,12 +177,10 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 k_optimo = segmentador.n_clusters_optimo
                 st.info(f"**Número óptimo de clusters sugerido: {k_optimo}**")
 
-                # Entrenar con k óptimo
                 st.write(f"### Paso 4: Entrenando K-Means...")
                 modelo = segmentador.entrenar_modelo(df_features, k_optimo)
                 st.success("Modelo entrenado exitosamente")
 
-                # Reducir dimensionalidad para visualización
                 st.write("### Paso 5: Reduciendo dimensionalidad...")
 
                 if metodo_viz == "PCA":
@@ -217,7 +194,6 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 df_viz['cliente'] = df_original['nombre_completo'].values
                 df_viz['monto_total'] = df_original['monto_total'].values
 
-                # Visualizar clusters
                 st.write("### Visualización de Clusters")
 
                 fig_clusters = px.scatter(
@@ -235,12 +211,10 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 fig_clusters.update_traces(marker=dict(opacity=0.7))
                 st.plotly_chart(fig_clusters, use_container_width=True)
 
-                # Interpretar clusters
                 st.write("### Interpretación de Segmentos")
 
                 df_interpretacion = segmentador.interpretar_clusters(df_original, segmentador.labels)
 
-                # Formatear columnas numéricas para mejor legibilidad
                 df_tabla = df_interpretacion.copy()
                 df_tabla['monto_total_promedio'] = df_tabla['monto_total_promedio'].apply(lambda x: f"₡{x:,.0f}")
                 df_tabla['monto_promedio'] = df_tabla['monto_promedio'].apply(lambda x: f"₡{x:,.0f}")
@@ -249,7 +223,6 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
 
                 st.dataframe(df_tabla, use_container_width=True)
 
-                # Distribución de clusters
                 col1, col2 = st.columns(2)
 
                 with col1:
@@ -337,10 +310,8 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
         with st.spinner("Entrenando modelo de regresión..."):
 
             try:
-                # Inicializar modelo
                 modelo_reg = ModeloRegresionVentas(engine)
 
-                # Extraer datos
                 st.write("### Paso 1: Extrayendo datos de ventas...")
                 df_ventas = modelo_reg.extraer_datos_ventas(limite=limite_datos)
                 st.success(f"{len(df_ventas)} registros extraídos")
@@ -348,17 +319,14 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                 with st.expander("Ver muestra de datos"):
                     st.dataframe(df_ventas.head(10), use_container_width=True)
 
-                # Preparar características
                 st.write("### Paso 2: Preparando características...")
                 X, y = modelo_reg.preparar_features(df_ventas, variable_objetivo=variable_objetivo)
                 st.success(f"{X.shape[1]} características preparadas")
 
-                # Dividir datos
                 st.write("### Paso 3: Dividiendo datos...")
                 X_train, X_test, y_train, y_test = modelo_reg.dividir_datos(X, y, test_size=test_size)
                 st.success(f"Train: {len(X_train)} | Test: {len(X_test)}")
 
-                # Entrenar modelo
                 st.write(f"### Paso 4: Entrenando modelo {tipo_modelo}...")
 
                 kwargs = {}
@@ -371,7 +339,6 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                 modelo = modelo_reg.entrenar_modelo(tipo_modelo=tipo_modelo, **kwargs)
                 st.success("Modelo entrenado exitosamente")
 
-                # Mostrar métricas
                 st.write("### Evaluación del Modelo")
 
                 col1, col2 = st.columns(2)
@@ -392,13 +359,11 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                     st.metric("MAE", f"{metricas_test['mae']:,.2f}")
                     st.metric("MAPE", f"{metricas_test['mape']:.2f}%")
 
-                # Validación cruzada
                 st.write("### Validación Cruzada")
                 cv_results = modelo_reg.cross_validation(cv=5)
 
                 st.info(f"**R² Score CV**: {cv_results['media']:.4f} ± {cv_results['std']:.4f}")
 
-                # Importancia de características
                 st.write("### Importancia de Características")
 
                 df_importancia = modelo_reg.obtener_importancia_features(top_n=15)
@@ -415,7 +380,6 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                     )
                     st.plotly_chart(fig_importancia, use_container_width=True)
 
-                # Análisis de residuos
                 st.write("### Análisis de Residuos")
 
                 df_residuos = modelo_reg.analizar_residuos()
@@ -455,7 +419,6 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                     fig_residuos.add_hline(y=0, line_dash='dash', line_color='red')
                     st.plotly_chart(fig_residuos, use_container_width=True)
 
-                # Distribución de residuos
                 fig_dist_residuos = px.histogram(
                     df_residuos,
                     x='residuo',
@@ -481,7 +444,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
         "Predicción de ventas futuras con modelos de series temporales",
     )
 
-    # Parámetros
     with st.expander("⚙️ Configuración del Modelo", expanded=True):
         col1, col2, col3, col4 = st.columns(4)
 
@@ -532,13 +494,11 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
             )
 
         with col4:
-            # Filtros opcionales
             st.markdown("**Filtros Opcionales**")
             aplicar_filtros = st.checkbox("Aplicar filtros")
 
             filtros = {}
             if aplicar_filtros:
-                # Obtener categorías
                 query_cat = "SELECT DISTINCT categoria FROM dim_producto ORDER BY categoria"
                 categorias = pd.read_sql(query_cat, engine)['categoria'].tolist()
 
@@ -551,10 +511,8 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
         with st.spinner("Generando proyecciones de series temporales..."):
 
             try:
-                # Inicializar modelo
                 modelo_proyeccion = ModeloProyeccionVentas(engine)
 
-                # Extraer serie temporal
                 st.write("### Paso 1: Extrayendo serie temporal...")
                 df_serie = modelo_proyeccion.extraer_serie_temporal(
                     granularidad=granularidad,
@@ -563,7 +521,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 )
                 st.success(f"{len(df_serie)} períodos extraídos")
 
-                # Visualizar serie histórica
                 st.write("### Serie Temporal Histórica")
 
                 fig_serie = px.line(
@@ -577,7 +534,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 fig_serie.update_traces(line=dict(width=2))
                 st.plotly_chart(fig_serie, use_container_width=True)
 
-                # Análisis de estacionariedad
                 st.write("### Análisis de Estacionariedad")
 
                 resultado_adf = modelo_proyeccion.analizar_estacionariedad()
@@ -593,12 +549,10 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                     else:
                         st.warning("Serie no es estacionaria")
 
-                # Dividir serie
                 st.write("### Paso 2: Dividiendo serie...")
                 train, test = modelo_proyeccion.dividir_serie(test_size=test_periods)
                 st.success(f"Train: {len(train)} | Test: {len(test)}")
 
-                # Entrenar modelo
                 st.write(f"### Paso 3: Entrenando modelo {tipo_modelo_ts}...")
 
                 if tipo_modelo_ts == "ARIMA":
@@ -612,7 +566,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                     )
                     st.success("Modelo entrenado")
 
-                # Mostrar métricas de evaluación
                 if modelo_proyeccion.metricas:
                     st.write("### Métricas de Evaluación (Test)")
 
@@ -624,7 +577,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                     with col3:
                         st.metric("MAPE", f"{modelo_proyeccion.metricas['mape']:.2f}%")
 
-                # Generar proyecciones
                 st.write(f"### Paso 4: Generando proyecciones para {periodos_proyectar} períodos...")
 
                 df_proyecciones = modelo_proyeccion.proyectar(
@@ -633,7 +585,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 )
                 st.success(f"Proyecciones generadas hasta {df_proyecciones.index[-1].strftime('%Y-%m-%d')}")
 
-                # Visualizar proyecciones
                 st.write("### Visualización de Proyecciones")
 
                 resumen = modelo_proyeccion.obtener_resumen_completo()
@@ -688,7 +639,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
 
                 st.plotly_chart(fig_proyeccion, use_container_width=True)
 
-                # Tabla de proyecciones
                 st.write("### Tabla de Proyecciones")
 
                 df_tabla = df_proyecciones.reset_index()
@@ -699,7 +649,6 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
 
                 st.dataframe(df_tabla, use_container_width=True)
 
-                # Estadísticas de las proyecciones
                 st.write("### Estadísticas de Proyecciones")
 
                 col1, col2, col3, col4 = st.columns(4)
