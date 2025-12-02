@@ -124,9 +124,9 @@ class ETLPipeline:
                 WHERE TABLE_NAME LIKE 'dim_%' OR TABLE_NAME LIKE 'fact_%'
             """)
             count_dw = cursor_dw.fetchone()[0]
-            logger.info(f"Tablas DW encontradas: {count_dw}/13")
+            logger.info(f"Tablas DW encontradas: {count_dw}/14")
 
-            if count_dw < 13:
+            if count_dw < 14:
                 logger.error("⚠ Faltan tablas en DW")
                 return False
 
@@ -241,7 +241,7 @@ class ETLPipeline:
 
             # Dimensiones
             for dim in ['tiempo', 'producto', 'cliente', 'geografia', 'almacen',
-                       'dispositivo', 'navegador', 'tipo_evento', 'estado_venta', 'metodo_pago']:
+                       'dispositivo', 'navegador', 'tipo_evento', 'estado_venta', 'metodo_pago', 'sesion']:
                 cursor_dw.execute(f"SELECT COUNT(*) FROM dim_{dim}")
                 count = cursor_dw.fetchone()[0]
                 logger.info(f"  dim_{dim:20} : {count:>10,}")

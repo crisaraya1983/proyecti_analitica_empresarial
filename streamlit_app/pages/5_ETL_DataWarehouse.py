@@ -196,7 +196,7 @@ with tab1:
                     st.metric("Registros Insertados", f"{total_insertados:,}")
 
                 with col4:
-                    st.metric("Tablas Cargadas", "13")
+                    st.metric("Tablas Cargadas", "14")
 
                 with log_general:
                     st.info(f"""
@@ -204,7 +204,7 @@ with tab1:
                     - Inicio: {pipeline.results['inicio'].strftime('%Y-%m-%d %H:%M:%S')}
                     - Fin: {pipeline.results['fin'].strftime('%Y-%m-%d %H:%M:%S')}
                     - Duración: {pipeline.results['duracion_segundos']} segundos
-                    - Dimensiones cargadas: 10
+                    - Dimensiones cargadas: 11
                     - Tablas de hechos cargadas: 3
                     - Total registros: {total_insertados:,}
                     """)

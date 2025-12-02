@@ -66,7 +66,7 @@ class DimensionLoader:
             dimension_tables = [
                 'dim_tiempo', 'dim_producto', 'dim_cliente', 'dim_geografia',
                 'dim_almacen', 'dim_dispositivo', 'dim_navegador',
-                'dim_tipo_evento', 'dim_estado_venta', 'dim_metodo_pago'
+                'dim_tipo_evento', 'dim_estado_venta', 'dim_metodo_pago', 'dim_sesion'
             ]
 
             logger.info("\nLimpiando tablas dimensionales...")
@@ -125,6 +125,7 @@ class DimensionLoader:
         results["dim_tipo_evento"] = self.load_dim_tipo_evento()
         results["dim_estado_venta"] = self.load_dim_estado_venta()
         results["dim_metodo_pago"] = self.load_dim_metodo_pago()
+        results["dim_sesion"] = self.load_dim_sesion()
 
         logger.info("=" * 80)
         logger.info("CARGA DE DIMENSIONES COMPLETADA")
@@ -718,5 +719,57 @@ class DimensionLoader:
 
         except Exception as e:
             logger.error(f"Error cargando dim_metodo_pago: {str(e)}")
+            etl_logger.registrar_error(str(e))
+            raise
+
+    def load_dim_sesion(self) -> Tuple[int, int]:
+        """Carga dimensión sesión desde eventos_web (valores únicos de sesiones)"""
+        etl_logger = ETLLogger(self.conn_dw)
+        etl_logger.iniciar_proceso("LOAD_DIM_SESION", "dim_sesion")
+
+        try:
+            logger.info("Cargando dim_sesion...")
+
+            cursor_dw = self.conn_dw.cursor()
+            # Extraer datos únicos de sesiones desde eventos_web
+            # Seleccionar el primer evento de cada sesión para obtener la fecha/hora
+            query = """
+                SELECT DISTINCT
+                    evento_id,
+                    codigo_sesion,
+                    fecha_hora_evento
+                FROM eventos_web
+                WHERE codigo_sesion IS NOT NULL
+                    AND evento_id IS NOT NULL
+            """
+
+            df = pd.read_sql(query, self.conn_oltp)
+            registros_extraidos = len(df)
+
+            if registros_extraidos == 0:
+                logger.warning("No hay datos de sesiones en eventos_web")
+                etl_logger.finalizar_proceso(0, 0)
+                return (0, 0)
+
+            # Insertar en DW
+            cursor_dw.fast_executemany = True
+            insert_sql = """
+                INSERT INTO dim_sesion (
+                    evento_id, codigo_sesion, fecha_hora_evento
+                )
+                VALUES (?, ?, ?)
+            """
+
+            cursor_dw.executemany(insert_sql, df.values.tolist())
+            self.conn_dw.commit()
+            cursor_dw.close()
+
+            logger.info(f"✓ dim_sesion: {registros_extraidos} registros cargados")
+            etl_logger.finalizar_proceso(registros_extraidos, registros_extraidos)
+
+            return (registros_extraidos, registros_extraidos)
+
+        except Exception as e:
+            logger.error(f"Error cargando dim_sesion: {str(e)}")
             etl_logger.registrar_error(str(e))
             raise

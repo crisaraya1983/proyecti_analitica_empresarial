@@ -226,6 +226,20 @@ CREATE INDEX IX_dim_metodo_pago_tipo ON dim_metodo_pago(tipo_metodo);
 GO
 
 -- =============================================
+-- Dimensión: dim_sesion
+-- =============================================
+CREATE TABLE dim_sesion (
+    evento_id           INT PRIMARY KEY,
+    codigo_sesion       NVARCHAR(100) NOT NULL,
+    fecha_hora_evento   DATETIME NOT NULL
+);
+
+-- Índices para dim_sesion
+CREATE INDEX IX_dim_sesion_codigo_sesion ON dim_sesion(codigo_sesion);
+CREATE INDEX IX_dim_sesion_fecha_hora ON dim_sesion(fecha_hora_evento);
+GO
+
+-- =============================================
 -- TABLAS DE HECHOS
 -- =============================================
 
@@ -426,7 +440,7 @@ GO
 -- MENSAJE FINAL
 -- =============================================
 PRINT 'Base de datos Ecommerce_DW creada exitosamente con:';
-PRINT '- 10 tablas dimensionales';
+PRINT '- 11 tablas dimensionales';
 PRINT '- 3 tablas de hechos';
 PRINT '- 1 tabla de logs ETL';
 PRINT '- Todos los índices y relaciones configurados';
