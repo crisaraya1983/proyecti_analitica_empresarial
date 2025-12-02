@@ -106,70 +106,106 @@ class ModeloProyeccionVentas:
 
         filtro_where = " AND ".join(condiciones_filtro)
 
-        # Query
+        # Query con CTE para agrupación correcta por venta_id
         if granularidad == 'dia':
             query = f"""
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta
+                    FROM fact_ventas fv
+                    INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
+                    INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+                        AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
+                    WHERE {filtro_where}
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.FECHA_CAL AS fecha,
-                    {metrica}
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-                INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-                INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-                WHERE {filtro_where}
+                    {metrica.replace('fv.', 'va.').replace('monto_total', 'monto_venta').replace('cantidad', 'total_unidades')}
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.FECHA_CAL
                 ORDER BY t.FECHA_CAL
             """
         elif granularidad == 'semana':
             query = f"""
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta
+                    FROM fact_ventas fv
+                    INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
+                    INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+                        AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
+                    WHERE {filtro_where}
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS anio,
                     t.SEM_CAL_NUM AS semana,
                     MIN(t.FECHA_CAL) AS fecha,
-                    {metrica}
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-                INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-                INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-                WHERE {filtro_where}
+                    {metrica.replace('fv.', 'va.').replace('monto_total', 'monto_venta').replace('cantidad', 'total_unidades')}
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL, t.SEM_CAL_NUM
                 ORDER BY t.ANIO_CAL, t.SEM_CAL_NUM
             """
         elif granularidad == 'mes':
             query = f"""
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta
+                    FROM fact_ventas fv
+                    INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
+                    INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+                        AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
+                    WHERE {filtro_where}
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS anio,
                     t.MES_CAL AS mes,
                     DATEFROMPARTS(t.ANIO_CAL, t.MES_CAL, 1) AS fecha,
-                    {metrica}
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-                INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-                INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-                WHERE {filtro_where}
+                    {metrica.replace('fv.', 'va.').replace('monto_total', 'monto_venta').replace('cantidad', 'total_unidades')}
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL, t.MES_CAL
                 ORDER BY t.ANIO_CAL, t.MES_CAL
             """
         else:  # trimestre
             query = f"""
+                WITH VentasAgrupadas AS (
+                    SELECT
+                        fv.venta_id,
+                        fv.tiempo_key,
+                        SUM(fv.cantidad) AS total_unidades,
+                        SUM(fv.monto_total) AS monto_venta
+                    FROM fact_ventas fv
+                    INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
+                    INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
+                        AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
+                    INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
+                    WHERE {filtro_where}
+                    GROUP BY fv.venta_id, fv.tiempo_key
+                )
                 SELECT
                     t.ANIO_CAL AS anio,
                     t.TRIMESTRE AS trimestre,
                     DATEFROMPARTS(t.ANIO_CAL, (t.TRIMESTRE - 1) * 3 + 1, 1) AS fecha,
-                    {metrica}
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-                INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id AND fv.distrito_id = g.distrito_id
-                INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-                WHERE {filtro_where}
+                    {metrica.replace('fv.', 'va.').replace('monto_total', 'monto_venta').replace('cantidad', 'total_unidades')}
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
                 GROUP BY t.ANIO_CAL, t.TRIMESTRE
                 ORDER BY t.ANIO_CAL, t.TRIMESTRE
             """

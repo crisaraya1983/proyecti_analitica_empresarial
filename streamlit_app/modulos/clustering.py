@@ -52,6 +52,7 @@ class SegmentacionClientes:
     def extraer_datos_clientes(self, limite: Optional[int] = None) -> pd.DataFrame:
         """
         Extrae características RFM y comportamiento de clientes del DW
+        Usa CTE con agrupación por venta_id para evitar duplicados
 
         Args:
             limite: Límite de clientes a procesar (None para todos)
@@ -59,64 +60,75 @@ class SegmentacionClientes:
         Returns:
             DataFrame con características de clientes
         """
-        logger.info("Extrayendo datos de clientes para clustering...")
+        logger.info("Extrayendo datos de clientes para clustering (con agrupación correcta por venta_id)...")
 
-        # Query optimizada para obtener métricas RFM
+        # Query optimizada con CTE por venta_id para obtener métricas RFM correctas
         query = """
-            WITH ClienteMetricas AS (
+            WITH VentasAgrupadas AS (
+                -- Agrupar primero por venta_id para evitar duplicados
                 SELECT
+                    fv.venta_id,
                     fv.cliente_id,
+                    fv.tiempo_key,
+                    fv.producto_id,
+                    fv.provincia_id,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.cliente_id, fv.tiempo_key, fv.producto_id, fv.provincia_id
+            ),
+            ClienteMetricas AS (
+                SELECT
+                    va.cliente_id,
                     -- Recencia (días desde última compra)
                     DATEDIFF(DAY, MAX(t.FECHA_CAL), GETDATE()) AS recencia_dias,
 
-                    -- Frecuencia (número de transacciones)
-                    COUNT(DISTINCT fv.venta_id) AS frecuencia_compras,
+                    -- Frecuencia (número de transacciones únicas)
+                    COUNT(DISTINCT va.venta_id) AS frecuencia_compras,
 
                     -- Monto (total gastado)
-                    SUM(fv.monto_total) AS monto_total,
-                    AVG(fv.monto_total) AS monto_promedio,
+                    SUM(va.monto_venta) AS monto_total,
+                    AVG(va.monto_venta) AS monto_promedio,
 
-                    -- Cantidad de productos diferentes
-                    COUNT(DISTINCT fv.producto_id) AS productos_diferentes,
+                    -- Cantidad de productos diferentes comprados
+                    COUNT(DISTINCT va.producto_id) AS productos_diferentes,
 
                     -- Cantidad total de unidades
-                    SUM(fv.cantidad) AS unidades_totales,
+                    SUM(va.total_unidades) AS unidades_totales,
 
                     -- Margen generado
-                    SUM(fv.margen) AS margen_total
+                    SUM(va.margen_venta) AS margen_total
 
-                FROM fact_ventas fv
-                INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-                WHERE fv.venta_cancelada = 0
-                GROUP BY fv.cliente_id
+                FROM VentasAgrupadas va
+                INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+                GROUP BY va.cliente_id
             ),
             ClienteCategorias AS (
                 SELECT
-                    fv.cliente_id,
-                    -- Categoría más comprada
+                    va.cliente_id,
+                    -- Categoría más comprada (por número de unidades)
                     (SELECT TOP 1 p.categoria
-                     FROM fact_ventas fv2
-                     INNER JOIN dim_producto p ON fv2.producto_id = p.producto_id
-                     WHERE fv2.cliente_id = fv.cliente_id
+                     FROM VentasAgrupadas va2
+                     INNER JOIN dim_producto p ON va2.producto_id = p.producto_id
+                     WHERE va2.cliente_id = va.cliente_id
                      GROUP BY p.categoria
-                     ORDER BY COUNT(*) DESC) AS categoria_preferida,
+                     ORDER BY SUM(va2.total_unidades) DESC) AS categoria_preferida,
 
                     -- Número de categorías diferentes
                     COUNT(DISTINCT p.categoria) AS categorias_diferentes
 
-                FROM fact_ventas fv
-                INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-                WHERE fv.venta_cancelada = 0
-                GROUP BY fv.cliente_id
+                FROM VentasAgrupadas va
+                INNER JOIN dim_producto p ON va.producto_id = p.producto_id
+                GROUP BY va.cliente_id
             ),
             ClienteUbicacion AS (
                 SELECT DISTINCT
-                    fv.cliente_id,
+                    va.cliente_id,
                     g.provincia
-                FROM fact_ventas fv
-                INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                    AND fv.canton_id = g.canton_id
-                    AND fv.distrito_id = g.distrito_id
+                FROM VentasAgrupadas va
+                INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
             )
             SELECT {limit_clause}
                 cm.cliente_id,
@@ -135,7 +147,7 @@ class SegmentacionClientes:
             INNER JOIN ClienteCategorias cc ON cm.cliente_id = cc.cliente_id
             INNER JOIN ClienteUbicacion cu ON cm.cliente_id = cu.cliente_id
             INNER JOIN dim_cliente cl ON cm.cliente_id = cl.cliente_id
-            WHERE cm.frecuencia_compras >= 2  -- Al menos 2 compras
+            WHERE cm.frecuencia_compras >= 2  -- Al menos 2 compras únicas
             ORDER BY cm.monto_total DESC
         """
 

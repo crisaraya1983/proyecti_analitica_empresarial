@@ -55,6 +55,7 @@ class ModeloRegresionVentas:
     def extraer_datos_ventas(self, limite: Optional[int] = None) -> pd.DataFrame:
         """
         Extrae datos agregados de ventas para entrenamiento
+        Usa CTE con agrupación por venta_id para evitar duplicados en cálculos
 
         Args:
             limite: Límite de registros (None para todos)
@@ -62,10 +63,32 @@ class ModeloRegresionVentas:
         Returns:
             DataFrame con datos agregados de ventas
         """
-        logger.info("Extrayendo datos de ventas para regresión...")
+        logger.info("Extrayendo datos de ventas para regresión (con agrupación correcta por venta_id)...")
 
-        # Query optimizada para obtener datos agregados
+        # Query optimizada con CTE por venta_id para obtener datos agregados correctos
         query = """
+            WITH VentasAgrupadas AS (
+                -- Agrupar primero por venta_id para evitar duplicados
+                SELECT
+                    fv.venta_id,
+                    fv.tiempo_key,
+                    fv.producto_id,
+                    fv.provincia_id,
+                    fv.almacen_id,
+                    fv.estado_venta_id,
+                    fv.metodo_pago_id,
+                    fv.es_primera_compra,
+                    SUM(fv.cantidad) AS total_unidades,
+                    SUM(fv.monto_total) AS monto_venta,
+                    SUM(fv.margen) AS margen_venta,
+                    SUM(fv.descuento_monto) AS descuento_venta,
+                    AVG(fv.precio_unitario) AS precio_promedio_venta
+                FROM fact_ventas fv
+                WHERE fv.venta_cancelada = 0
+                GROUP BY fv.venta_id, fv.tiempo_key, fv.producto_id,
+                         fv.provincia_id, fv.almacen_id, fv.estado_venta_id,
+                         fv.metodo_pago_id, fv.es_primera_compra
+            )
             SELECT {limit_clause}
                 -- Dimensiones temporales
                 t.ANIO_CAL AS anio,
@@ -89,30 +112,26 @@ class ModeloRegresionVentas:
                 ev.estado_venta,
                 mp.metodo_pago,
 
-                -- Variables objetivo y features agregadas
-                COUNT(DISTINCT fv.venta_id) AS num_transacciones,
-                SUM(fv.cantidad) AS cantidad_total,
-                SUM(fv.monto_total) AS monto_ventas,
-                AVG(fv.monto_total) AS monto_promedio,
-                SUM(fv.margen) AS margen_total,
-                SUM(fv.descuento_monto) AS descuento_total,
-                AVG(fv.precio_unitario) AS precio_promedio,
+                -- Variables objetivo y features agregadas (usando ventas únicas)
+                COUNT(DISTINCT va.venta_id) AS num_transacciones,
+                SUM(va.total_unidades) AS cantidad_total,
+                SUM(va.monto_venta) AS monto_ventas,
+                AVG(va.monto_venta) AS monto_promedio,
+                SUM(va.margen_venta) AS margen_total,
+                SUM(va.descuento_venta) AS descuento_total,
+                AVG(va.precio_promedio_venta) AS precio_promedio,
 
                 -- Indicadores
-                CAST(AVG(CAST(fv.es_primera_compra AS FLOAT)) AS FLOAT) AS proporcion_nuevos_clientes
+                CAST(SUM(CAST(va.es_primera_compra AS INT)) * 1.0 / COUNT(DISTINCT va.venta_id) AS FLOAT) AS proporcion_nuevos_clientes
 
-            FROM fact_ventas fv
-            INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA
-            INNER JOIN dim_producto p ON fv.producto_id = p.producto_id
-            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                AND fv.canton_id = g.canton_id
-                AND fv.distrito_id = g.distrito_id
-            INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id
-            INNER JOIN dim_estado_venta ev ON fv.estado_venta_id = ev.estado_venta_id
-            INNER JOIN dim_metodo_pago mp ON fv.metodo_pago_id = mp.metodo_pago_id
-
-            WHERE fv.venta_cancelada = 0
-              AND ev.es_exitosa = 1
+            FROM VentasAgrupadas va
+            INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA
+            INNER JOIN dim_producto p ON va.producto_id = p.producto_id
+            INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+            INNER JOIN dim_almacen a ON va.almacen_id = a.almacen_id
+            INNER JOIN dim_estado_venta ev ON va.estado_venta_id = ev.estado_venta_id
+                AND ev.es_exitosa = 1
+            INNER JOIN dim_metodo_pago mp ON va.metodo_pago_id = mp.metodo_pago_id
 
             GROUP BY
                 t.ANIO_CAL, t.MES_CAL, t.TRIMESTRE, t.DIA_SEM_NUM,
@@ -121,7 +140,7 @@ class ModeloRegresionVentas:
                 a.nombre_almacen, a.tipo_almacen,
                 ev.estado_venta, mp.metodo_pago
 
-            HAVING COUNT(DISTINCT fv.venta_id) >= 1
+            HAVING COUNT(DISTINCT va.venta_id) >= 1
 
             ORDER BY t.ANIO_CAL DESC, t.MES_CAL DESC
         """
