@@ -44,12 +44,6 @@ inicializar_componentes()
 
 st.title("Ecommerce Cenfotec")
 
-# Título
-crear_seccion_encabezado(
-    "Modelos de Minería de Datos",
-    "Machine Learning aplicado al análisis de ventas",
-    badge_color="primary"
-)
 
 # ============================================================================
 # FUNCIONES DE CACHÉ
@@ -69,7 +63,7 @@ def get_dw_engine():
 # SIDEBAR - SELECCIÓN DE MODELO
 # ============================================================================
 
-st.sidebar.title("⚙️ Configuración")
+st.sidebar.title("Configuración")
 
 modelo_seleccionado = st.sidebar.selectbox(
     "Seleccionar Modelo",
@@ -77,17 +71,6 @@ modelo_seleccionado = st.sidebar.selectbox(
      "Regresión - Predicción de Ventas",
      "Proyecciones - Series Temporales"]
 )
-
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**💡 Sobre los Modelos**
-
-**Clustering**: Agrupa clientes similares usando K-Means
-
-**Regresión**: Predice ventas basado en variables
-
-**Proyecciones**: Predice ventas futuras con series temporales
-""")
 
 # Obtener engine
 engine = get_dw_engine()
@@ -128,7 +111,7 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 help="Reducción de dimensionalidad para visualizar clusters"
             )
 
-    if st.button("🚀 Entrenar Modelo de Clustering", use_container_width=True, type="primary"):
+    if st.button("Entrenar Modelo de Clustering", use_container_width=True, type="primary"):
 
         with st.spinner("Entrenando modelo de clustering..."):
 
@@ -137,20 +120,20 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 segmentador = SegmentacionClientes(engine)
 
                 # Extraer datos
-                st.write("### 📊 Paso 1: Extrayendo datos de clientes...")
+                st.write("### Paso 1: Extrayendo datos de clientes...")
                 df_clientes = segmentador.extraer_datos_clientes(limite=limite_clientes)
-                st.success(f"✅ {len(df_clientes)} clientes extraídos")
+                st.success(f"{len(df_clientes)} clientes extraídos")
 
                 with st.expander("Ver muestra de datos"):
                     st.dataframe(df_clientes.head(10), use_container_width=True)
 
                 # Preparar features
-                st.write("### 🔧 Paso 2: Preparando features...")
+                st.write("### Paso 2: Preparando características...")
                 df_original, df_features = segmentador.preparar_features(df_clientes)
-                st.success(f"✅ {df_features.shape[1]} features preparados")
+                st.success(f"{df_features.shape[1]} características preparadas")
 
                 # Buscar número óptimo de clusters
-                st.write("### 🔍 Paso 3: Buscando número óptimo de clusters...")
+                st.write("### Paso 3: Buscando número óptimo de clusters...")
 
                 resultados_k = segmentador.encontrar_numero_clusters_optimo(
                     df_features,
@@ -213,23 +196,15 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                     st.plotly_chart(fig_db, use_container_width=True)
 
                 k_optimo = segmentador.n_clusters_optimo
-                st.info(f"📌 **Número óptimo de clusters sugerido: {k_optimo}**")
+                st.info(f"**Número óptimo de clusters sugerido: {k_optimo}**")
 
-                # Permitir ajuste manual
-                k_final = st.number_input(
-                    "Seleccionar número final de clusters",
-                    min_value=k_min,
-                    max_value=k_max,
-                    value=k_optimo
-                )
-
-                # Entrenar con k final
-                st.write(f"### 🤖 Paso 4: Entrenando K-Means con k={k_final}...")
-                modelo = segmentador.entrenar_modelo(df_features, k_final)
-                st.success("✅ Modelo entrenado exitosamente")
+                # Entrenar con k óptimo
+                st.write(f"### Paso 4: Entrenando K-Means...")
+                modelo = segmentador.entrenar_modelo(df_features, k_optimo)
+                st.success("Modelo entrenado exitosamente")
 
                 # Reducir dimensionalidad para visualización
-                st.write("### 📉 Paso 5: Reduciendo dimensionalidad...")
+                st.write("### Paso 5: Reduciendo dimensionalidad...")
 
                 if metodo_viz == "PCA":
                     df_viz = segmentador.reducir_dimensionalidad_pca(df_features)
@@ -243,7 +218,7 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 df_viz['monto_total'] = df_original['monto_total'].values
 
                 # Visualizar clusters
-                st.write("### 🎨 Visualización de Clusters")
+                st.write("### Visualización de Clusters")
 
                 fig_clusters = px.scatter(
                     df_viz,
@@ -261,10 +236,18 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 st.plotly_chart(fig_clusters, use_container_width=True)
 
                 # Interpretar clusters
-                st.write("### 📋 Interpretación de Clusters")
+                st.write("### Interpretación de Segmentos")
 
                 df_interpretacion = segmentador.interpretar_clusters(df_original, segmentador.labels)
-                st.dataframe(df_interpretacion, use_container_width=True)
+
+                # Formatear columnas numéricas para mejor legibilidad
+                df_tabla = df_interpretacion.copy()
+                df_tabla['monto_total_promedio'] = df_tabla['monto_total_promedio'].apply(lambda x: f"₡{x:,.0f}")
+                df_tabla['monto_promedio'] = df_tabla['monto_promedio'].apply(lambda x: f"₡{x:,.0f}")
+                df_tabla['margen_total_promedio'] = df_tabla['margen_total_promedio'].apply(lambda x: f"₡{x:,.0f}")
+                df_tabla['porcentaje'] = df_tabla['porcentaje'].apply(lambda x: f"{x:.1f}%")
+
+                st.dataframe(df_tabla, use_container_width=True)
 
                 # Distribución de clusters
                 col1, col2 = st.columns(2)
@@ -280,19 +263,20 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                     st.plotly_chart(fig_dist, use_container_width=True)
 
                 with col2:
-                    fig_monto = px.bar(
-                        df_interpretacion,
+                    fig_freq = px.bar(
+                        df_interpretacion.sort_values('frecuencia_promedio', ascending=False),
                         x='nombre_segmento',
-                        y='monto_total_promedio',
-                        title='Monto Promedio por Segmento',
-                        color='monto_total_promedio',
-                        color_continuous_scale='Blues'
+                        y='frecuencia_promedio',
+                        title='Frecuencia Promedio de Compra por Segmento',
+                        color='frecuencia_promedio',
+                        color_continuous_scale='Greens',
+                        labels={'frecuencia_promedio': 'Número de Compras', 'nombre_segmento': 'Segmento'}
                     )
-                    fig_monto.update_xaxes(tickangle=45)
-                    st.plotly_chart(fig_monto, use_container_width=True)
+                    fig_freq.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_freq, use_container_width=True)
 
                 # Características por cluster
-                st.write("### 📊 Características Detalladas por Segmento")
+                st.write("### Características Detalladas por Segmento")
 
                 fig_caracteristicas = make_subplots(
                     rows=2, cols=2,
@@ -336,28 +320,16 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 fig_caracteristicas.update_layout(height=700, showlegend=False)
                 st.plotly_chart(fig_caracteristicas, use_container_width=True)
 
-                # Ver clientes por cluster
-                st.write("### 👥 Clientes por Segmento")
-
-                cluster_seleccionado = st.selectbox(
-                    "Seleccionar segmento",
-                    df_interpretacion['cluster'].tolist(),
-                    format_func=lambda x: df_interpretacion[df_interpretacion['cluster'] == x]['nombre_segmento'].iloc[0]
-                )
-
-                df_cluster = segmentador.obtener_clientes_por_cluster(cluster_seleccionado, top_n=20)
-                st.dataframe(df_cluster, use_container_width=True)
-
                 # Guardar modelo
-                st.write("### 💾 Guardar Modelo")
+                st.write("### Guardar Modelo")
 
                 if st.button("Guardar Modelo de Clustering"):
                     ruta_guardado = os.path.join(project_root, 'modelos', 'saved')
                     rutas = segmentador.guardar_modelo(ruta_guardado)
-                    st.success(f"✅ Modelo guardado en: {rutas['modelo']}")
+                    st.success(f"Modelo guardado en: {rutas['modelo']}")
 
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                st.error(f"Error: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
 
