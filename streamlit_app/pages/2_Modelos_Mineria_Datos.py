@@ -320,14 +320,6 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                 fig_caracteristicas.update_layout(height=700, showlegend=False)
                 st.plotly_chart(fig_caracteristicas, use_container_width=True)
 
-                # Guardar modelo
-                st.write("### Guardar Modelo")
-
-                if st.button("Guardar Modelo de Clustering"):
-                    ruta_guardado = os.path.join(project_root, 'modelos', 'saved')
-                    rutas = segmentador.guardar_modelo(ruta_guardado)
-                    st.success(f"Modelo guardado en: {rutas['modelo']}")
-
             except Exception as e:
                 st.error(f"Error: {str(e)}")
                 import traceback
@@ -384,7 +376,7 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                 n_estimators = st.number_input("Número de árboles", 50, 300, 100, 50)
                 max_depth = st.number_input("Profundidad máxima", 3, 20, 10, 1)
 
-    if st.button("🚀 Entrenar Modelo de Regresión", use_container_width=True, type="primary"):
+    if st.button("Entrenar Modelo de Regresión", use_container_width=True, type="primary"):
 
         with st.spinner("Entrenando modelo de regresión..."):
 
@@ -393,25 +385,25 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                 modelo_reg = ModeloRegresionVentas(engine)
 
                 # Extraer datos
-                st.write("### 📊 Paso 1: Extrayendo datos de ventas...")
+                st.write("### Paso 1: Extrayendo datos de ventas...")
                 df_ventas = modelo_reg.extraer_datos_ventas(limite=limite_datos)
-                st.success(f"✅ {len(df_ventas)} registros extraídos")
+                st.success(f"{len(df_ventas)} registros extraídos")
 
                 with st.expander("Ver muestra de datos"):
                     st.dataframe(df_ventas.head(10), use_container_width=True)
 
-                # Preparar features
-                st.write("### 🔧 Paso 2: Preparando features...")
+                # Preparar características
+                st.write("### Paso 2: Preparando características...")
                 X, y = modelo_reg.preparar_features(df_ventas, variable_objetivo=variable_objetivo)
-                st.success(f"✅ {X.shape[1]} features preparados")
+                st.success(f"{X.shape[1]} características preparadas")
 
                 # Dividir datos
-                st.write("### ✂️ Paso 3: Dividiendo datos...")
+                st.write("### Paso 3: Dividiendo datos...")
                 X_train, X_test, y_train, y_test = modelo_reg.dividir_datos(X, y, test_size=test_size)
-                st.success(f"✅ Train: {len(X_train)} | Test: {len(X_test)}")
+                st.success(f"Train: {len(X_train)} | Test: {len(X_test)}")
 
                 # Entrenar modelo
-                st.write(f"### 🤖 Paso 4: Entrenando modelo {tipo_modelo}...")
+                st.write(f"### Paso 4: Entrenando modelo {tipo_modelo}...")
 
                 kwargs = {}
                 if tipo_modelo in ['ridge', 'lasso']:
@@ -421,10 +413,10 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                     kwargs['max_depth'] = max_depth
 
                 modelo = modelo_reg.entrenar_modelo(tipo_modelo=tipo_modelo, **kwargs)
-                st.success("✅ Modelo entrenado exitosamente")
+                st.success("Modelo entrenado exitosamente")
 
                 # Mostrar métricas
-                st.write("### 📈 Evaluación del Modelo")
+                st.write("### Evaluación del Modelo")
 
                 col1, col2 = st.columns(2)
 
@@ -445,13 +437,13 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                     st.metric("MAPE", f"{metricas_test['mape']:.2f}%")
 
                 # Validación cruzada
-                st.write("### 🔄 Validación Cruzada")
+                st.write("### Validación Cruzada")
                 cv_results = modelo_reg.cross_validation(cv=5)
 
                 st.info(f"**R² Score CV**: {cv_results['media']:.4f} ± {cv_results['std']:.4f}")
 
-                # Importancia de features
-                st.write("### 📊 Importancia de Features")
+                # Importancia de características
+                st.write("### Importancia de Características")
 
                 df_importancia = modelo_reg.obtener_importancia_features(top_n=15)
 
@@ -461,14 +453,14 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                         x='importancia',
                         y='feature',
                         orientation='h',
-                        title='Top 15 Features Más Importantes',
+                        title='Top 15 Características Más Importantes',
                         color='importancia',
                         color_continuous_scale='Blues'
                     )
                     st.plotly_chart(fig_importancia, use_container_width=True)
 
                 # Análisis de residuos
-                st.write("### 📉 Análisis de Residuos")
+                st.write("### Análisis de Residuos")
 
                 df_residuos = modelo_reg.analizar_residuos()
 
@@ -517,16 +509,8 @@ elif modelo_seleccionado == "Regresión - Predicción de Ventas":
                 )
                 st.plotly_chart(fig_dist_residuos, use_container_width=True)
 
-                # Guardar modelo
-                st.write("### 💾 Guardar Modelo")
-
-                if st.button("Guardar Modelo de Regresión"):
-                    ruta_guardado = os.path.join(project_root, 'modelos', 'saved')
-                    rutas = modelo_reg.guardar_modelo(ruta_guardado)
-                    st.success(f"✅ Modelo guardado en: {rutas['modelo']}")
-
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                st.error(f"Error: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -606,7 +590,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 if filtro_cat != "Todas":
                     filtros['categoria'] = filtro_cat
 
-    if st.button("🚀 Generar Proyecciones", use_container_width=True, type="primary"):
+    if st.button("Generar Proyecciones", use_container_width=True, type="primary"):
 
         with st.spinner("Generando proyecciones de series temporales..."):
 
@@ -615,16 +599,16 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 modelo_proyeccion = ModeloProyeccionVentas(engine)
 
                 # Extraer serie temporal
-                st.write("### 📊 Paso 1: Extrayendo serie temporal...")
+                st.write("### Paso 1: Extrayendo serie temporal...")
                 df_serie = modelo_proyeccion.extraer_serie_temporal(
                     granularidad=granularidad,
                     agregacion=agregacion,
                     filtros=filtros if filtros else None
                 )
-                st.success(f"✅ {len(df_serie)} períodos extraídos")
+                st.success(f"{len(df_serie)} períodos extraídos")
 
                 # Visualizar serie histórica
-                st.write("### 📈 Serie Temporal Histórica")
+                st.write("### Serie Temporal Histórica")
 
                 fig_serie = px.line(
                     df_serie.reset_index(),
@@ -638,7 +622,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 st.plotly_chart(fig_serie, use_container_width=True)
 
                 # Análisis de estacionariedad
-                st.write("### 🔍 Análisis de Estacionariedad")
+                st.write("### Análisis de Estacionariedad")
 
                 resultado_adf = modelo_proyeccion.analizar_estacionariedad()
 
@@ -649,32 +633,32 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                     st.metric("p-valor", f"{resultado_adf['p_valor']:.4f}")
                 with col3:
                     if resultado_adf['es_estacionaria']:
-                        st.success("✅ Serie es estacionaria")
+                        st.success("Serie es estacionaria")
                     else:
-                        st.warning("⚠️ Serie no es estacionaria")
+                        st.warning("Serie no es estacionaria")
 
                 # Dividir serie
-                st.write("### ✂️ Paso 2: Dividiendo serie...")
+                st.write("### Paso 2: Dividiendo serie...")
                 train, test = modelo_proyeccion.dividir_serie(test_size=test_periods)
-                st.success(f"✅ Train: {len(train)} | Test: {len(test)}")
+                st.success(f"Train: {len(train)} | Test: {len(test)}")
 
                 # Entrenar modelo
-                st.write(f"### 🤖 Paso 3: Entrenando modelo {tipo_modelo_ts}...")
+                st.write(f"### Paso 3: Entrenando modelo {tipo_modelo_ts}...")
 
                 if tipo_modelo_ts == "ARIMA":
                     modelo = modelo_proyeccion.entrenar_arima(buscar_orden=True)
-                    st.success(f"✅ Modelo {modelo_proyeccion.tipo_modelo} entrenado")
+                    st.success(f"Modelo {modelo_proyeccion.tipo_modelo} entrenado")
                 else:
                     seasonal_periods = 12 if granularidad == 'mes' else (52 if granularidad == 'semana' else 7)
                     modelo = modelo_proyeccion.entrenar_exponential_smoothing(
                         seasonal='add',
                         seasonal_periods=seasonal_periods
                     )
-                    st.success("✅ Modelo entrenado")
+                    st.success("Modelo entrenado")
 
                 # Mostrar métricas de evaluación
                 if modelo_proyeccion.metricas:
-                    st.write("### 📈 Métricas de Evaluación (Test)")
+                    st.write("### Métricas de Evaluación (Test)")
 
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -685,16 +669,16 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                         st.metric("MAPE", f"{modelo_proyeccion.metricas['mape']:.2f}%")
 
                 # Generar proyecciones
-                st.write(f"### 🔮 Paso 4: Generando proyecciones para {periodos_proyectar} períodos...")
+                st.write(f"### Paso 4: Generando proyecciones para {periodos_proyectar} períodos...")
 
                 df_proyecciones = modelo_proyeccion.proyectar(
                     periodos=periodos_proyectar,
                     intervalo_confianza=intervalo_confianza
                 )
-                st.success(f"✅ Proyecciones generadas hasta {df_proyecciones.index[-1].strftime('%Y-%m-%d')}")
+                st.success(f"Proyecciones generadas hasta {df_proyecciones.index[-1].strftime('%Y-%m-%d')}")
 
                 # Visualizar proyecciones
-                st.write("### 🎨 Visualización de Proyecciones")
+                st.write("### Visualización de Proyecciones")
 
                 resumen = modelo_proyeccion.obtener_resumen_completo()
 
@@ -749,7 +733,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 st.plotly_chart(fig_proyeccion, use_container_width=True)
 
                 # Tabla de proyecciones
-                st.write("### 📋 Tabla de Proyecciones")
+                st.write("### Tabla de Proyecciones")
 
                 df_tabla = df_proyecciones.reset_index()
                 df_tabla['fecha'] = df_tabla['fecha'].dt.strftime('%Y-%m-%d')
@@ -760,7 +744,7 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 st.dataframe(df_tabla, use_container_width=True)
 
                 # Estadísticas de las proyecciones
-                st.write("### 📊 Estadísticas de Proyecciones")
+                st.write("### Estadísticas de Proyecciones")
 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -770,19 +754,11 @@ elif modelo_seleccionado == "Proyecciones - Series Temporales":
                 with col3:
                     st.metric("Máximo", f"{df_proyecciones['proyeccion'].max():,.2f}")
                 with col4:
-                    tendencia = "📈 Creciente" if df_proyecciones['proyeccion'].iloc[-1] > df_proyecciones['proyeccion'].iloc[0] else "📉 Decreciente"
+                    tendencia = "Creciente" if df_proyecciones['proyeccion'].iloc[-1] > df_proyecciones['proyeccion'].iloc[0] else "Decreciente"
                     st.metric("Tendencia", tendencia)
 
-                # Guardar modelo
-                st.write("### 💾 Guardar Modelo")
-
-                if st.button("Guardar Modelo de Proyecciones"):
-                    ruta_guardado = os.path.join(project_root, 'modelos', 'saved')
-                    ruta = modelo_proyeccion.guardar_modelo(ruta_guardado)
-                    st.success(f"✅ Modelo guardado en: {ruta}")
-
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                st.error(f"Error: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
 
