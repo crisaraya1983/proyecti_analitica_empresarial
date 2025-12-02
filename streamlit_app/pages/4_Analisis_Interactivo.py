@@ -38,7 +38,7 @@ except ImportError:
 
 st.set_page_config(
     page_title="Análisis Interactivo - PyGwalker",
-    page_icon="🔍",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -76,7 +76,7 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
     Returns:
         DataFrame con datos multidimensionales
     """
-    st.info(f"🔄 Cargando datos del cubo OLAP con {len(dimensiones)} dimensiones...")
+    st.info(f"Cargando datos del cubo OLAP con {len(dimensiones)} dimensiones...")
 
     # Construir SELECT dinámico basado en dimensiones
     select_fields = []
@@ -231,17 +231,11 @@ def obtener_opciones_filtros(_conn):
 
 if not PYGWALKER_AVAILABLE:
     st.error("""
-    ❌ **PyGwalker no está instalado**
+    **PyGwalker no está instalado**
 
-    Para usar esta funcionalidad, instala PyGwalker:
-
+    Para usar esta funcionalidad, instala PyGwalker ejecutando:
     ```bash
     pip install pygwalker
-    ```
-
-    O agrega a tu requirements.txt:
-    ```
-    pygwalker>=0.4.0
     ```
     """)
     st.stop()
@@ -257,49 +251,13 @@ crear_seccion_encabezado(
 )
 
 # ============================================================================
-# INFORMACIÓN
-# ============================================================================
-
-with st.expander("ℹ️ Cómo usar PyGwalker", expanded=False):
-    st.markdown("""
-    ### 🎨 Características de PyGwalker
-
-    **PyGwalker** convierte tu DataFrame en una interfaz tipo Tableau para análisis visual:
-
-    #### 🔧 Funcionalidades Principales:
-
-    1. **Drag and Drop**: Arrastra campos a los ejes X, Y, Color, Tamaño
-    2. **Múltiples Visualizaciones**: Barras, líneas, scatter, pie, mapas de calor
-    3. **Filtros Interactivos**: Filtra datos directamente en la interfaz
-    4. **Agregaciones**: Suma, promedio, conteo, min, max automáticos
-    5. **Exportar Gráficos**: Descarga visualizaciones como imagen
-
-    #### 📊 Tipos de Gráficos Disponibles:
-
-    - 📊 Barras (verticales y horizontales)
-    - 📈 Líneas y áreas
-    - 🔵 Scatter plots
-    - 🥧 Pie charts
-    - 🗺️ Mapas de calor
-    - 📉 Histogramas
-    - Y más...
-
-    #### 💡 Tips:
-
-    - Arrastra dimensiones categóricas (provincia, categoría) a Color o Filas
-    - Arrastra métricas numéricas (monto_total, cantidad) a columnas
-    - Usa el botón de agregación para cambiar entre suma, promedio, etc.
-    - Haz clic en "+" para agregar más gráficos en la misma vista
-    """)
-
-# ============================================================================
 # SIDEBAR - CONFIGURACIÓN
 # ============================================================================
 
-st.sidebar.title("⚙️ Configuración de Datos")
+st.sidebar.title("Configuración de Datos")
 
 # Selector de dimensiones
-st.sidebar.markdown("### 🎯 Seleccionar Dimensiones")
+st.sidebar.markdown("### Dimensiones a Incluir")
 
 dimensiones_disponibles = {
     'producto': 'Productos (nombre, categoría, marca)',
@@ -319,12 +277,12 @@ for dim_key, dim_label in dimensiones_disponibles.items():
 st.sidebar.markdown("---")
 
 # Filtros de datos
-st.sidebar.markdown("### 🔍 Filtros de Datos")
+st.sidebar.markdown("### Filtros de Datos")
 
 engine = get_dw_engine()
 opciones_filtros = obtener_opciones_filtros(engine)
 
-with st.sidebar.expander("📅 Rango de Fechas", expanded=True):
+with st.sidebar.expander("Rango de Fechas", expanded=True):
     fecha_inicio = st.date_input(
         "Fecha inicio",
         value=(datetime.now() - timedelta(days=90)).date(),
@@ -337,7 +295,7 @@ with st.sidebar.expander("📅 Rango de Fechas", expanded=True):
         key="fecha_fin_pygwalker"
     )
 
-with st.sidebar.expander("🏷️ Filtros Dimensionales"):
+with st.sidebar.expander("Filtros Dimensionales"):
     categoria_filtro = st.selectbox(
         "Categoría",
         opciones_filtros['categorias'],
@@ -353,7 +311,7 @@ with st.sidebar.expander("🏷️ Filtros Dimensionales"):
 st.sidebar.markdown("---")
 
 # Límite de registros
-st.sidebar.markdown("### ⚡ Performance")
+st.sidebar.markdown("### Performance")
 
 limite_registros = st.sidebar.selectbox(
     "Límite de registros",
@@ -372,15 +330,16 @@ filtros = {
 }
 
 # Botón para cargar datos
-cargar_datos = st.sidebar.button("🔄 Cargar/Actualizar Datos", use_container_width=True, type="primary")
+cargar_datos = st.sidebar.button("Cargar/Actualizar Datos", use_container_width=True, type="primary")
 
 st.sidebar.markdown("---")
 
 # Información de dimensiones seleccionadas
-st.sidebar.info(f"""
+if dimensiones_seleccionadas:
+    st.sidebar.info(f"""
 **Dimensiones seleccionadas:** {len(dimensiones_seleccionadas)}
 
-{chr(10).join([f"✓ {dimensiones_disponibles[dim]}" for dim in dimensiones_seleccionadas])}
+{chr(10).join([f"• {dimensiones_disponibles[dim]}" for dim in dimensiones_seleccionadas])}
 """)
 
 # ============================================================================
@@ -400,10 +359,10 @@ if 'datos_cargados' not in st.session_state or cargar_datos:
             st.session_state.datos_cargados = df_datos
             st.session_state.dimensiones_actuales = dimensiones_seleccionadas
 
-            st.success(f"✅ {len(df_datos):,} registros cargados con {len(df_datos.columns)} columnas")
+            st.success(f"{len(df_datos):,} registros cargados con {len(df_datos.columns)} columnas")
 
         except Exception as e:
-            st.error(f"❌ Error cargando datos: {str(e)}")
+            st.error(f"Error cargando datos: {str(e)}")
             st.stop()
 
 # ============================================================================
@@ -417,23 +376,23 @@ if 'datos_cargados' in st.session_state:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("📊 Registros", f"{len(df):,}")
+        st.metric("Registros", f"{len(df):,}")
 
     with col2:
-        st.metric("📋 Columnas", len(df.columns))
+        st.metric("Columnas", len(df.columns))
 
     with col3:
-        st.metric("💰 Ventas Totales", f"₡{df['monto_total'].sum():,.0f}")
+        st.metric("Ventas Totales", f"₡{df['monto_total'].sum():,.0f}")
 
     with col4:
-        st.metric("📈 Margen Total", f"₡{df['margen'].sum():,.0f}")
+        st.metric("Margen Total", f"₡{df['margen'].sum():,.0f}")
 
     # Mostrar preview de datos
-    with st.expander("👀 Preview de Datos (primeros 10 registros)", expanded=False):
+    with st.expander("Preview de Datos (primeros 10 registros)", expanded=False):
         st.dataframe(df.head(10), use_container_width=True)
 
     # Información de columnas
-    with st.expander("📋 Información de Columnas", expanded=False):
+    with st.expander("Información de Columnas", expanded=False):
         col_info = pd.DataFrame({
             'Columna': df.columns,
             'Tipo': df.dtypes.values,
@@ -449,16 +408,7 @@ if 'datos_cargados' in st.session_state:
     # PYGWALKER INTERFACE
     # ============================================================================
 
-    st.markdown("## 🎨 Interfaz de Análisis Visual")
-
-    st.info("""
-    **💡 Instrucciones:**
-    1. Arrastra campos desde el panel izquierdo hacia los ejes X, Y
-    2. Agrega dimensiones a Color, Tamaño o Detalles
-    3. Cambia el tipo de gráfico desde el selector superior
-    4. Usa filtros para explorar subconjuntos de datos
-    5. Haz clic en "+" para crear múltiples visualizaciones
-    """)
+    st.markdown("## Interfaz de Análisis Visual Interactivo")
 
     try:
         # Generar HTML de PyGwalker
@@ -475,18 +425,11 @@ if 'datos_cargados' in st.session_state:
         components.html(pyg_html, height=1000, scrolling=True)
 
     except Exception as e:
-        st.error(f"❌ Error al renderizar PyGwalker: {str(e)}")
-
-        st.warning("""
-        **Posibles soluciones:**
-        1. Verifica que PyGwalker esté correctamente instalado
-        2. Intenta reducir el número de registros
-        3. Verifica que no haya valores conflictivos en los datos
-        """)
+        st.error(f"Error al renderizar PyGwalker: {str(e)}")
 
         # Mostrar traceback para debugging
         import traceback
-        with st.expander("🔧 Detalles del Error"):
+        with st.expander("Detalles del Error"):
             st.code(traceback.format_exc())
 
     # ============================================================================
@@ -494,7 +437,7 @@ if 'datos_cargados' in st.session_state:
     # ============================================================================
 
     st.markdown("---")
-    st.markdown("## 💾 Exportar Datos")
+    st.markdown("## Exportar Datos")
 
     col1, col2 = st.columns(2)
 
@@ -502,7 +445,7 @@ if 'datos_cargados' in st.session_state:
         # Exportar a CSV
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Descargar CSV",
+            label="Descargar CSV",
             data=csv,
             file_name=f'datos_cubo_olap_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
             mime='text/csv',
@@ -517,7 +460,7 @@ if 'datos_cargados' in st.session_state:
             df.to_excel(writer, sheet_name='Datos OLAP', index=False)
 
         st.download_button(
-            label="📥 Descargar Excel",
+            label="Descargar Excel",
             data=buffer.getvalue(),
             file_name=f'datos_cubo_olap_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx',
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -526,23 +469,8 @@ if 'datos_cargados' in st.session_state:
 
 else:
     # No hay datos cargados
-    st.warning("""
-    👈 **Configura las opciones en el sidebar y presiona "Cargar/Actualizar Datos"**
-
-    1. Selecciona las dimensiones que deseas analizar
-    2. Configura los filtros (fechas, categoría, provincia)
-    3. Elige el límite de registros
-    4. Presiona el botón azul para cargar los datos
-    """)
-
     st.info("""
-    ### 💡 Recomendaciones:
-
-    - **Para exploración inicial**: Usa 10,000 registros
-    - **Para análisis detallado**: Usa 25,000 - 50,000 registros
-    - **Para reportes ejecutivos**: Filtra por periodo específico
-
-    Siempre puedes recargar con diferentes configuraciones.
+    Configura las opciones en el sidebar y presiona "Cargar/Actualizar Datos" para comenzar el análisis.
     """)
 
 st.markdown("---")
