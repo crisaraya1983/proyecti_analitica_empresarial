@@ -387,15 +387,23 @@ class ModeloProyeccionVentas:
         # Predecir en test
         predicciones = self.modelo_fit.forecast(steps=len(self.datos_prueba))
 
+        # Convertir predicciones a Series con índice alineado
+        if isinstance(predicciones, pd.Series):
+            predicciones_arr = predicciones.values
+        else:
+            predicciones_arr = np.array(predicciones)
+
+        datos_prueba_arr = self.datos_prueba.values if isinstance(self.datos_prueba, pd.Series) else np.array(self.datos_prueba)
+
         # Calcular métricas
-        rmse = np.sqrt(mean_squared_error(self.datos_prueba, predicciones))
-        mae = mean_absolute_error(self.datos_prueba, predicciones)
+        rmse = np.sqrt(mean_squared_error(datos_prueba_arr, predicciones_arr))
+        mae = mean_absolute_error(datos_prueba_arr, predicciones_arr)
 
         # MAPE
-        mask = self.datos_prueba != 0
+        mask = datos_prueba_arr != 0
         mape = mean_absolute_percentage_error(
-            self.datos_prueba[mask],
-            predicciones[mask]
+            datos_prueba_arr[mask],
+            predicciones_arr[mask]
         ) * 100 if mask.sum() > 0 else 0
 
         self.metricas = {

@@ -275,50 +275,6 @@ if modelo_seleccionado == "Clustering - Segmentación de Clientes":
                     fig_freq.update_xaxes(tickangle=45)
                     st.plotly_chart(fig_freq, use_container_width=True)
 
-                # Características por cluster
-                st.write("### Características Detalladas por Segmento")
-
-                fig_caracteristicas = make_subplots(
-                    rows=2, cols=2,
-                    subplot_titles=('Recencia Promedio (días)', 'Frecuencia Promedio',
-                                    'Monto Total Promedio', 'Productos Diferentes Promedio')
-                )
-
-                fig_caracteristicas.add_trace(
-                    go.Bar(x=df_interpretacion['nombre_segmento'],
-                           y=df_interpretacion['recencia_promedio'],
-                           name='Recencia',
-                           marker_color=COLORES[0]),
-                    row=1, col=1
-                )
-
-                fig_caracteristicas.add_trace(
-                    go.Bar(x=df_interpretacion['nombre_segmento'],
-                           y=df_interpretacion['frecuencia_promedio'],
-                           name='Frecuencia',
-                           marker_color=COLORES[1]),
-                    row=1, col=2
-                )
-
-                fig_caracteristicas.add_trace(
-                    go.Bar(x=df_interpretacion['nombre_segmento'],
-                           y=df_interpretacion['monto_total_promedio'],
-                           name='Monto',
-                           marker_color=COLORES[2]),
-                    row=2, col=1
-                )
-
-                fig_caracteristicas.add_trace(
-                    go.Bar(x=df_interpretacion['nombre_segmento'],
-                           y=df_interpretacion['productos_diferentes_promedio'],
-                           name='Productos',
-                           marker_color=COLORES[3]),
-                    row=2, col=2
-                )
-
-                fig_caracteristicas.update_xaxes(tickangle=45)
-                fig_caracteristicas.update_layout(height=700, showlegend=False)
-                st.plotly_chart(fig_caracteristicas, use_container_width=True)
 
             except Exception as e:
                 st.error(f"Error: {str(e)}")
