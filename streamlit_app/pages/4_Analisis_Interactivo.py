@@ -65,7 +65,11 @@ def get_dw_engine():
 @st.cache_data(ttl=1800)  # Cache por 30 minutos
 def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dict = None) -> pd.DataFrame:
     """
-    Carga datos del cubo OLAP con dimensiones seleccionadas
+    Carga datos del cubo OLAP agregados correctamente por venta
+
+    NOTA IMPORTANTE: fact_ventas tiene granularidad de DETALLE DE VENTA (una fila por línea de factura).
+    Esta función AGRUPA PRIMERO por venta_id para obtener métricas únicas,
+    luego cruza con dimensiones para análisis correcto.
 
     Args:
         _conn: Conexión a BD
@@ -74,63 +78,98 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
         filtros: Filtros adicionales
 
     Returns:
-        DataFrame con datos multidimensionales
+        DataFrame con datos multidimensionales (agregados por venta_id)
     """
-    st.info(f"Cargando datos del cubo OLAP con {len(dimensiones)} dimensiones...")
+    # PASO 1: Construir CTE para agregar ventas (CRÍTICO: agrupar por venta_id primero)
+    cte_ventas_agrupadas = """
+    WITH VentasAgrupadas AS (
+        -- Agregar primero por venta_id para obtener totales correctos
+        SELECT
+            fv.venta_id,
+            fv.cliente_id,
+            fv.tiempo_key,
+            fv.provincia_id,
+            fv.canton_id,
+            fv.distrito_id,
+            fv.almacen_id,
+            fv.estado_venta_id,
+            fv.metodo_pago_id,
+            fv.es_primera_compra,
+            fv.venta_cancelada,
+            -- Medidas agregadas correctamente (no duplicadas)
+            SUM(fv.cantidad) AS cantidad_total,
+            SUM(fv.precio_unitario * fv.cantidad) AS monto_productos,
+            SUM(fv.descuento_monto) AS descuento_total,
+            SUM(fv.subtotal) AS subtotal_venta,
+            SUM(fv.impuesto) AS impuesto_venta,
+            SUM(fv.monto_total) AS monto_venta,
+            SUM(fv.margen) AS margen_venta,
+            COUNT(DISTINCT fv.detalle_venta_id) AS num_productos_venta,
+            AVG(fv.precio_unitario) AS precio_promedio
+        FROM fact_ventas fv
+        GROUP BY
+            fv.venta_id, fv.cliente_id, fv.tiempo_key, fv.provincia_id, fv.canton_id,
+            fv.distrito_id, fv.almacen_id, fv.estado_venta_id, fv.metodo_pago_id,
+            fv.es_primera_compra, fv.venta_cancelada
+    )
+    """
 
-    # Construir SELECT dinámico basado en dimensiones
+    # PASO 2: Construir SELECT dinámico basado en dimensiones
     select_fields = []
     join_clauses = []
+    from_clause = "VentasAgrupadas va"
 
-    # Siempre incluir métricas de fact_ventas
+    # Siempre incluir ID de venta y métricas agregadas
     select_fields.extend([
-        "fv.venta_id",
-        "fv.detalle_venta_id",
-        "fv.cantidad",
-        "fv.precio_unitario",
-        "fv.costo_unitario",
-        "fv.descuento_monto",
-        "fv.subtotal",
-        "fv.impuesto",
-        "fv.monto_total",
-        "fv.margen",
-        "fv.es_primera_compra",
-        "fv.venta_cancelada"
+        "va.venta_id",
+        "va.cantidad_total",
+        "va.monto_productos",
+        "va.descuento_total",
+        "va.subtotal_venta",
+        "va.impuesto_venta",
+        "va.monto_venta",
+        "va.margen_venta",
+        "va.num_productos_venta",
+        "va.precio_promedio"
     ])
 
-    # Dimensión Tiempo (siempre incluir)
-    if 'tiempo' in dimensiones or True:  # Siempre incluir tiempo
-        select_fields.extend([
-            "t.FECHA_CAL AS fecha",
-            "t.ANIO_CAL AS anio",
-            "t.MES_CAL AS mes",
-            "t.MES_NOMBRE AS mes_nombre",
-            "t.TRIMESTRE AS trimestre",
-            "t.DIA_SEM_NOMBRE AS dia_semana",
-            "t.SEM_CAL_NUM AS semana"
-        ])
-        join_clauses.append("INNER JOIN dim_tiempo t ON fv.tiempo_key = t.ID_FECHA")
+    # Dimensión Tiempo (siempre incluir - IMPORTANTE: usar ANIO_CAL, no números)
+    select_fields.extend([
+        "t.FECHA_CAL AS fecha",
+        "t.ANIO_CAL AS anio",
+        "t.ANIO_CAL AS anio_dimension",  # Para garantizar visualización correcta
+        "t.MES_CAL AS mes_numero",
+        "t.MES_NOMBRE AS mes",
+        "t.TRIMESTRE AS trimestre",
+        "t.DIA_SEM_NOMBRE AS dia_semana",
+        "t.SEM_CAL_NUM AS semana"
+    ])
+    join_clauses.append("INNER JOIN dim_tiempo t ON va.tiempo_key = t.ID_FECHA")
 
-    # Dimensión Producto
+    # Dimensión Producto - SOLO si se selecciona
     if 'producto' in dimensiones:
         select_fields.extend([
             "p.producto_id",
             "p.nombre_producto",
             "p.categoria",
-            "p.marca",
-            "p.precio_unitario AS producto_precio"
+            "p.marca"
         ])
-        join_clauses.append("INNER JOIN dim_producto p ON fv.producto_id = p.producto_id")
+        join_clauses.append("""
+            INNER JOIN (
+                SELECT DISTINCT fv.venta_id, fv.producto_id
+                FROM fact_ventas fv
+            ) fv_producto ON va.venta_id = fv_producto.venta_id
+            INNER JOIN dim_producto p ON fv_producto.producto_id = p.producto_id
+        """)
 
     # Dimensión Cliente
     if 'cliente' in dimensiones:
         select_fields.extend([
             "cl.cliente_id",
             "CONCAT(cl.nombre_cliente, ' ', cl.apellido_cliente) AS cliente_nombre",
-            "cl.correo_electronico AS cliente_email",
-            "cl.telefono AS cliente_telefono"
+            "cl.correo_electronico AS cliente_email"
         ])
-        join_clauses.append("INNER JOIN dim_cliente cl ON fv.cliente_id = cl.cliente_id")
+        join_clauses.append("INNER JOIN dim_cliente cl ON va.cliente_id = cl.cliente_id")
 
     # Dimensión Geografía
     if 'geografia' in dimensiones:
@@ -140,9 +179,9 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
             "g.distrito"
         ])
         join_clauses.append("""
-            INNER JOIN dim_geografia g ON fv.provincia_id = g.provincia_id
-                AND fv.canton_id = g.canton_id
-                AND fv.distrito_id = g.distrito_id
+            INNER JOIN dim_geografia g ON va.provincia_id = g.provincia_id
+                AND va.canton_id = g.canton_id
+                AND va.distrito_id = g.distrito_id
         """)
 
     # Dimensión Almacén
@@ -152,7 +191,7 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
             "a.nombre_almacen AS almacen",
             "a.tipo_almacen"
         ])
-        join_clauses.append("INNER JOIN dim_almacen a ON fv.almacen_id = a.almacen_id")
+        join_clauses.append("INNER JOIN dim_almacen a ON va.almacen_id = a.almacen_id")
 
     # Dimensión Estado Venta
     if 'estado_venta' in dimensiones:
@@ -161,19 +200,18 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
             "ev.estado_venta",
             "ev.es_exitosa"
         ])
-        join_clauses.append("INNER JOIN dim_estado_venta ev ON fv.estado_venta_id = ev.estado_venta_id")
+        join_clauses.append("INNER JOIN dim_estado_venta ev ON va.estado_venta_id = ev.estado_venta_id")
 
     # Dimensión Método de Pago
     if 'metodo_pago' in dimensiones:
         select_fields.extend([
             "mp.metodo_pago_id",
-            "mp.metodo_pago",
-            "mp.tipo_metodo"
+            "mp.metodo_pago"
         ])
-        join_clauses.append("INNER JOIN dim_metodo_pago mp ON fv.metodo_pago_id = mp.metodo_pago_id")
+        join_clauses.append("INNER JOIN dim_metodo_pago mp ON va.metodo_pago_id = mp.metodo_pago_id")
 
-    # Construir WHERE clause
-    where_clauses = ["fv.venta_cancelada = 0"]  # Solo ventas válidas
+    # PASO 3: Construir WHERE clause (ANTES de los JOINs)
+    where_clauses = ["va.venta_cancelada = 0"]  # Solo ventas válidas
 
     if filtros:
         if 'fecha_inicio' in filtros and filtros['fecha_inicio']:
@@ -185,23 +223,25 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
         if 'provincia' in filtros and filtros['provincia'] and filtros['provincia'] != 'Todas':
             where_clauses.append(f"g.provincia = '{filtros['provincia']}'")
 
-    # Construir query completa
+    # PASO 4: Construir query completa CON CTE
     query = f"""
+        {cte_ventas_agrupadas}
         SELECT {f'TOP {limite}' if limite else ''}
             {', '.join(select_fields)}
-        FROM fact_ventas fv
+        FROM {from_clause}
         {' '.join(join_clauses)}
         WHERE {' AND '.join(where_clauses)}
-        ORDER BY t.FECHA_CAL DESC
+        ORDER BY va.monto_venta DESC
     """
 
     # Ejecutar query
     df = pd.read_sql(query, _conn)
 
-    # Agregar columnas calculadas
+    # Agregar columnas calculadas útiles
     if not df.empty:
-        df['ganancia'] = df['monto_total'] - (df['cantidad'] * df['costo_unitario'])
-        df['margen_porcentaje'] = (df['margen'] / df['monto_total'] * 100).round(2)
+        df['margen_porcentaje'] = (df['margen_venta'] / df['monto_venta'] * 100).round(2)
+        df['descuento_porcentaje'] = (df['descuento_total'] / df['subtotal_venta'] * 100).round(2)
+        df['valor_promedio'] = (df['monto_venta'] / df['cantidad_total']).round(2)
 
         # Convertir fecha a datetime si existe
         if 'fecha' in df.columns:
@@ -209,7 +249,7 @@ def cargar_datos_cubo(_conn, dimensiones: list, limite: int = None, filtros: dic
 
     # Convertir tipos nullable de pandas a tipos estándar numpy para compatibilidad con PyArrow/Streamlit
     for col in df.columns:
-        if hasattr(df[col].dtype, 'numpy_dtype'):  # Es un tipo nullable de pandas (Int64, Float64, etc.)
+        if hasattr(df[col].dtype, 'numpy_dtype'):
             df[col] = df[col].astype(df[col].dtype.numpy_dtype)
 
     return df
@@ -246,7 +286,6 @@ if not PYGWALKER_AVAILABLE:
 
 crear_seccion_encabezado(
     "Análisis Interactivo",
-    "Exploración visual tipo Tableau con PyGwalker - Drag and Drop",
     badge_color="primary"
 )
 
@@ -371,36 +410,6 @@ if 'datos_cargados' not in st.session_state or cargar_datos:
 
 if 'datos_cargados' in st.session_state:
     df = st.session_state.datos_cargados
-
-    # Métricas de datos
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Registros", f"{len(df):,}")
-
-    with col2:
-        st.metric("Columnas", len(df.columns))
-
-    with col3:
-        st.metric("Ventas Totales", f"₡{df['monto_total'].sum():,.0f}")
-
-    with col4:
-        st.metric("Margen Total", f"₡{df['margen'].sum():,.0f}")
-
-    # Mostrar preview de datos
-    with st.expander("Preview de Datos (primeros 10 registros)", expanded=False):
-        st.dataframe(df.head(10), use_container_width=True)
-
-    # Información de columnas
-    with st.expander("Información de Columnas", expanded=False):
-        col_info = pd.DataFrame({
-            'Columna': df.columns,
-            'Tipo': df.dtypes.values,
-            'Valores Únicos': [df[col].nunique() for col in df.columns],
-            'Valores Nulos': [df[col].isnull().sum() for col in df.columns],
-            'Valores Nulos %': [f"{(df[col].isnull().sum() / len(df) * 100):.1f}%" for col in df.columns]
-        })
-        st.dataframe(col_info, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
