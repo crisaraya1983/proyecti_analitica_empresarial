@@ -1,39 +1,75 @@
 # ============================================================================
-# DEPENDENCIAS PYTHON - ECOMMERCE DATA WAREHOUSE
+# DEPENDENCIAS PYTHON - ECOMMERCE DATA WAREHOUSE & ANALYTICS
 # ============================================================================
 # Instalar con: pip install -r requirements.txt
+# Actualizado: 2025-12-02
 # ============================================================================
 
-# Streamlit - Framework web para dashboards
-streamlit>=1.28.0
+# ============================================================================
+# FRAMEWORK WEB
+# ============================================================================
+streamlit>=1.28.0               # Framework web para dashboards interactivos
+streamlit-components-browser>=0.1.0  # Soporte para componentes HTML/JS
 
-# Base de datos
-pyodbc>=4.0.39                  # Conexión a SQL Server
-sqlalchemy>=2.0.0               # ORM y engine para pandas (evita warnings)
+# ============================================================================
+# BASE DE DATOS Y CONEXIONES
+# ============================================================================
+pyodbc>=4.0.39                  # Conexión a Microsoft SQL Server
+sqlalchemy>=2.0.0               # ORM y engine para pandas (evita warnings con pyodbc)
 
-# Análisis de datos
-pandas>=2.0.0                   # Manipulación de datos
-numpy>=1.24.0                   # Operaciones numéricas
+# ============================================================================
+# ANÁLISIS Y MANIPULACIÓN DE DATOS
+# ============================================================================
+pandas>=2.0.0                   # Manipulación y análisis de datos
+numpy>=1.24.0                   # Operaciones numéricas y arrays
+python-dateutil>=2.8.2          # Utilities para manejo de fechas
+pytz>=2023.3                    # Soporte de zonas horarias
 
-# Visualización
-plotly>=5.17.0                  # Gráficos interactivos
-matplotlib>=3.7.0               # Gráficos estáticos
-seaborn>=0.12.0                 # Gráficos estadísticos
+# ============================================================================
+# VISUALIZACIÓN Y ANÁLISIS INTERACTIVO
+# ============================================================================
+plotly>=5.17.0                  # Gráficos interactivos (scatter, bar, line, etc)
+matplotlib>=3.7.0               # Gráficos estáticos (base de seaborn)
+seaborn>=0.12.0                 # Visualización estadística avanzada
+folium>=0.14.0                  # Mapas interactivos (geografía)
+pygwalker>=0.4.0                # Análisis exploratorio tipo Tableau/PowerBI
 
-# Utilidades
-python-dateutil>=2.8.2          # Manejo de fechas
-pytz>=2023.3                    # Zonas horarias
+# ============================================================================
+# MACHINE LEARNING Y ESTADÍSTICA
+# ============================================================================
+scikit-learn>=1.3.0             # Algoritmos ML:
+                                #   - KMeans clustering
+                                #   - Regresión (Linear, Ridge, Lasso, RF, GB)
+                                #   - Métricas y evaluación
+                                #   - Preprocessing (StandardScaler, LabelEncoder)
+                                #   - Dimensionality reduction (PCA, t-SNE)
 
-# Machine Learning
-scikit-learn>=1.3.0             # Modelos ML (clustering, regression)
-statsmodels>=0.14.0             # Series temporales (ARIMA)
-joblib>=1.3.0                   # Persistencia de modelos
+statsmodels>=0.14.0             # Análisis de series temporales:
+                                #   - ARIMA
+                                #   - Exponential Smoothing (Holt-Winters)
+                                #   - Test de estacionariedad (ADF)
+                                #   - ACF/PACF analysis
 
-# Análisis Interactivo
-pygwalker>=0.4.0                # Interfaz tipo Tableau para análisis
+joblib>=1.3.0                   # Serialización y persistencia de modelos
 
-# Asistente IA
-anthropic>=0.18.0               # Claude AI API
+# ============================================================================
+# ASISTENTE IA
+# ============================================================================
+anthropic>=0.18.0               # Claude AI API (análisis y consultas inteligentes)
 
-# Logging y debugging
-colorama>=0.4.6                 # Colores en consola (opcional)
+# ============================================================================
+# UTILIDADES Y HERRAMIENTAS
+# ============================================================================
+openpyxl>=3.10.0                # Exportación a Excel (.xlsx)
+colorama>=0.4.6                 # Colores y estilos en consola/logs (opcional)
+
+# ============================================================================
+# NOTAS SOBRE VERSIONES
+# ============================================================================
+# - Streamlit: >=1.28.0 (cambios en API v1.28+)
+# - pandas: >=2.0.0 (cambios mayores en v2.0)
+# - SQLAlchemy: >=2.0.0 (API v2.0 recomendada)
+# - scikit-learn: >=1.3.0 (estimadores modernos)
+# - statsmodels: >=0.14.0 (ARIMA mejorado)
+# - pygwalker: >=0.4.0 (compatibilidad con streamlit)
+# ============================================================================
