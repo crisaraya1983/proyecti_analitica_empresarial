@@ -7,9 +7,7 @@ import numpy as np
 from typing import Optional, Dict, Any
 
 def inyectar_estilos_globales():
-    """
-    Inyecta estilos CSS globales que se aplican a toda la aplicación.
-    """
+
     st.markdown("""
     <style>
     /* Variables y colores */

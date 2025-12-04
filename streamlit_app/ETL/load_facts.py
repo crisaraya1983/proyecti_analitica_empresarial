@@ -1,13 +1,3 @@
-"""
-================================================================================
-CARGA DE TABLAS DE HECHOS - ETL PIPELINE
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Cargar todas las tablas de hechos desde OLTP a DW
-================================================================================
-"""
-
 import pyodbc
 import pandas as pd
 import numpy as np
@@ -19,33 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 class FactLoader:
-    """Clase para cargar tablas de hechos desde OLTP a DW"""
 
     def __init__(self, conn_oltp: pyodbc.Connection, conn_dw: pyodbc.Connection):
-        """
-        Inicializa el cargador de hechos
 
-        Args:
-            conn_oltp: Conexión a Ecommerce_OLTP
-            conn_dw: Conexión a Ecommerce_DW
-        """
         self.conn_oltp = conn_oltp
         self.conn_dw = conn_dw
 
     def load_all_facts(self) -> Dict[str, Tuple[int, int]]:
-        """
-        Carga todas las tablas de hechos
-
-        Returns:
-            Diccionario con el resultado de cada fact: {nombre: (extraidos, insertados)}
-        """
         results = {}
 
         logger.info("=" * 80)
         logger.info("INICIANDO CARGA DE TABLAS DE HECHOS")
         logger.info("=" * 80)
 
-        # Cargar hechos (fact_ventas primero, luego los demás)
         results["fact_ventas"] = self.load_fact_ventas()
         results["fact_comportamiento_web"] = self.load_fact_comportamiento_web()
         results["fact_busquedas"] = self.load_fact_busquedas()
@@ -57,19 +33,17 @@ class FactLoader:
         return results
 
     def load_fact_ventas(self) -> Tuple[int, int]:
-        """Carga fact_ventas desde detalles_venta + ventas + clientes"""
+
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_FACT_VENTAS", "fact_ventas")
 
         try:
             logger.info("Cargando fact_ventas...")
 
-            # Limpiar tabla destino
             cursor_dw = self.conn_dw.cursor()
             cursor_dw.execute("TRUNCATE TABLE fact_ventas")
             self.conn_dw.commit()
 
-            # Extraer datos de OLTP con todos los JOINs necesarios
             query = """
                 SELECT
                     -- Tiempo (convertir fecha_venta a ID_FECHA formato YYYYMMDD)
@@ -129,44 +103,33 @@ class FactLoader:
 
             logger.info(f"  Extraídos {registros_extraidos:,} registros de OLTP")
 
-            # Obtener mappings de dimensiones con surrogate keys
             logger.info("  Obteniendo mappings de dimensiones...")
 
-            # Obtener estado_venta_id
             cursor_dw.execute("""
                 SELECT estado_venta_id, estado_venta
                 FROM dim_estado_venta
             """)
             estado_venta_map = {row[1]: row[0] for row in cursor_dw.fetchall()}
 
-            # Obtener metodo_pago_id
             cursor_dw.execute("""
                 SELECT metodo_pago_id, metodo_pago
                 FROM dim_metodo_pago
             """)
             metodo_pago_map = {row[1]: row[0] for row in cursor_dw.fetchall()}
 
-            # Mapear IDs
             df['estado_venta_id'] = df['estado_venta'].str.upper().map(estado_venta_map)
             df['metodo_pago_id'] = df['metodo_pago'].str.upper().map(metodo_pago_map)
 
-            # Eliminar columnas no necesarias
             df = df.drop(['estado_venta', 'metodo_pago'], axis=1)
 
-            # Validar que no haya NULLs en campos críticos
             if df['estado_venta_id'].isna().any() or df['metodo_pago_id'].isna().any():
                 logger.warning("  ⚠ Hay valores NULL en estado_venta_id o metodo_pago_id")
 
-            # Convertir tipos de datos a tipos nativos de Python (no numpy)
-            # para evitar errores con pyodbc
-
-            # Columnas DECIMAL -> convertir a float nativo Python
             decimal_cols = ['precio_unitario', 'costo_unitario', 'descuento_porcentaje',
                            'descuento_monto', 'subtotal', 'impuesto', 'monto_total', 'margen']
             for col in decimal_cols:
                 df[col] = df[col].apply(lambda x: float(round(x, 2)) if pd.notna(x) else 0.0)
 
-            # Columnas INT -> convertir a int nativo Python
             int_cols = ['tiempo_key', 'producto_id', 'cliente_id', 'provincia_id',
                        'canton_id', 'distrito_id', 'almacen_id', 'estado_venta_id',
                        'metodo_pago_id', 'venta_id', 'detalle_venta_id', 'cantidad',
@@ -174,7 +137,6 @@ class FactLoader:
             for col in int_cols:
                 df[col] = df[col].apply(lambda x: int(x) if pd.notna(x) else 0)
 
-            # Insertar en DW en lotes (SIN fast_executemany por problemas de tipos)
             logger.info("  Insertando en fact_ventas...")
             cursor_dw.fast_executemany = False
 
@@ -204,7 +166,6 @@ class FactLoader:
                 )
             """
 
-            # Reordenar columnas para que coincidan con el INSERT
             column_order = [
                 'tiempo_key', 'producto_id', 'cliente_id',
                 'provincia_id', 'canton_id', 'distrito_id',
@@ -217,10 +178,9 @@ class FactLoader:
             ]
             df = df[column_order]
 
-            # Insertar en lotes de 5000
             BATCH_SIZE = 5000
-            COMMIT_EVERY = 10000  # Commit cada 10k registros
-            CHECKPOINT_EVERY = 20000  # Checkpoint cada 20k para liberar log
+            COMMIT_EVERY = 10000
+            CHECKPOINT_EVERY = 20000
             total_insertados = 0
 
             for i in range(0, len(df), BATCH_SIZE):
@@ -229,12 +189,10 @@ class FactLoader:
                 cursor_dw.executemany(insert_sql, data_batch)
                 total_insertados += len(batch)
 
-                # Commit frecuente cada COMMIT_EVERY registros
                 if total_insertados % COMMIT_EVERY == 0:
                     self.conn_dw.commit()
                     logger.info(f"    Insertados: {total_insertados:,} / {len(df):,} (commit)")
 
-                    # Checkpoint y limpieza de log cada CHECKPOINT_EVERY
                     if total_insertados % CHECKPOINT_EVERY == 0:
                         try:
                             cursor_dw.execute("CHECKPOINT")
@@ -243,7 +201,6 @@ class FactLoader:
                         except Exception as log_err:
                             logger.warning(f"    ⚠ No se pudo liberar log: {log_err}")
 
-            # Commit final para cualquier registro restante
             self.conn_dw.commit()
             cursor_dw.close()
 
@@ -258,19 +215,16 @@ class FactLoader:
             raise
 
     def load_fact_comportamiento_web(self) -> Tuple[int, int]:
-        """Carga fact_comportamiento_web desde eventos_web"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_FACT_COMPORTAMIENTO_WEB", "fact_comportamiento_web")
 
         try:
             logger.info("Cargando fact_comportamiento_web...")
 
-            # Limpiar tabla destino
             cursor_dw = self.conn_dw.cursor()
             cursor_dw.execute("TRUNCATE TABLE fact_comportamiento_web")
             self.conn_dw.commit()
 
-            # Extraer datos de OLTP
             query = """
                 SELECT
                     -- Tiempo
@@ -310,10 +264,8 @@ class FactLoader:
 
             logger.info(f"  Extraídos {registros_extraidos:,} registros de OLTP")
 
-            # Obtener mappings de dimensiones
             logger.info("  Obteniendo mappings de dimensiones...")
 
-            # Dispositivo
             cursor_dw.execute("""
                 SELECT dispositivo_id, tipo_dispositivo, dispositivo, sistema_operativo
                 FROM dim_dispositivo
@@ -327,21 +279,18 @@ class FactLoader:
                 )
                 dispositivo_map[key] = row[0]
 
-            # Navegador
             cursor_dw.execute("""
                 SELECT navegador_id, navegador
                 FROM dim_navegador
             """)
             navegador_map = {row[1]: row[0] for row in cursor_dw.fetchall()}
 
-            # Tipo evento
             cursor_dw.execute("""
                 SELECT tipo_evento_id, tipo_evento
                 FROM dim_tipo_evento
             """)
             tipo_evento_map = {row[1]: row[0] for row in cursor_dw.fetchall()}
 
-            # Mapear IDs
             df['dispositivo_key'] = df.apply(
                 lambda row: (
                     row['tipo_dispositivo'].upper() if pd.notna(row['tipo_dispositivo']) else '',
@@ -354,19 +303,16 @@ class FactLoader:
             df['navegador_id'] = df['navegador'].str.upper().map(navegador_map)
             df['tipo_evento_id'] = df['tipo_evento'].str.upper().map(tipo_evento_map)
 
-            # Eliminar columnas intermedias
             df = df.drop(['tipo_dispositivo', 'dispositivo', 'sistema_operativo',
                          'navegador', 'tipo_evento', 'dispositivo_key'], axis=1)
 
-            # Validar que no haya NULLs críticos
             null_count = df[['dispositivo_id', 'navegador_id', 'tipo_evento_id']].isna().sum()
             if null_count.any():
                 logger.warning(f"  ⚠ Valores NULL encontrados: {null_count.to_dict()}")
-                # Filtrar registros con NULLs en campos requeridos
+
                 df = df.dropna(subset=['dispositivo_id', 'navegador_id', 'tipo_evento_id'])
                 logger.warning(f"  Registros filtrados. Nuevos total: {len(df):,}")
 
-            # Reordenar columnas para que coincidan con el INSERT
             column_order = [
                 'tiempo_key', 'cliente_id', 'producto_id',
                 'dispositivo_id', 'navegador_id', 'tipo_evento_id',
@@ -376,7 +322,6 @@ class FactLoader:
             ]
             df = df[column_order]
 
-            # Insertar en DW
             logger.info("  Insertando en fact_comportamiento_web...")
             cursor_dw.fast_executemany = False
 
@@ -392,13 +337,13 @@ class FactLoader:
             """
 
             BATCH_SIZE = 5000
-            COMMIT_EVERY = 10000  # Commit cada 10k registros
-            CHECKPOINT_EVERY = 20000  # Checkpoint cada 20k para liberar log
+            COMMIT_EVERY = 10000
+            CHECKPOINT_EVERY = 20000
             total_insertados = 0
 
             for i in range(0, len(df), BATCH_SIZE):
                 batch = df.iloc[i:i + BATCH_SIZE]
-                # Convertir cada fila a tupla de tipos nativos Python
+
                 data_batch = []
                 for _, row in batch.iterrows():
                     converted_row = tuple(
@@ -409,12 +354,10 @@ class FactLoader:
                 cursor_dw.executemany(insert_sql, data_batch)
                 total_insertados += len(batch)
 
-                # Commit frecuente cada COMMIT_EVERY registros
                 if total_insertados % COMMIT_EVERY == 0:
                     self.conn_dw.commit()
                     logger.info(f"    Insertados: {total_insertados:,} / {len(df):,} (commit)")
 
-                    # Checkpoint y limpieza de log cada CHECKPOINT_EVERY
                     if total_insertados % CHECKPOINT_EVERY == 0:
                         try:
                             cursor_dw.execute("CHECKPOINT")
@@ -423,7 +366,6 @@ class FactLoader:
                         except Exception as log_err:
                             logger.warning(f"    ⚠ No se pudo liberar log: {log_err}")
 
-            # Commit final para cualquier registro restante
             self.conn_dw.commit()
             cursor_dw.close()
 
@@ -438,19 +380,17 @@ class FactLoader:
             raise
 
     def load_fact_busquedas(self) -> Tuple[int, int]:
-        """Carga fact_busquedas desde busquedas_web"""
+
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_FACT_BUSQUEDAS", "fact_busquedas")
 
         try:
             logger.info("Cargando fact_busquedas...")
 
-            # Limpiar tabla destino
             cursor_dw = self.conn_dw.cursor()
             cursor_dw.execute("TRUNCATE TABLE fact_busquedas")
             self.conn_dw.commit()
 
-            # Extraer datos de OLTP
             query = """
                 SELECT
                     -- Tiempo
@@ -488,10 +428,8 @@ class FactLoader:
 
             logger.info(f"  Extraídos {registros_extraidos:,} registros de OLTP")
 
-            # Obtener mappings de dimensiones
             logger.info("  Obteniendo mappings de dimensiones...")
 
-            # Dispositivo
             cursor_dw.execute("""
                 SELECT dispositivo_id, tipo_dispositivo, dispositivo, sistema_operativo
                 FROM dim_dispositivo
@@ -505,14 +443,12 @@ class FactLoader:
                 )
                 dispositivo_map[key] = row[0]
 
-            # Navegador
             cursor_dw.execute("""
                 SELECT navegador_id, navegador
                 FROM dim_navegador
             """)
             navegador_map = {row[1]: row[0] for row in cursor_dw.fetchall()}
 
-            # Mapear IDs
             df['dispositivo_key'] = df.apply(
                 lambda row: (
                     row['tipo_dispositivo'].upper() if pd.notna(row['tipo_dispositivo']) else '',
@@ -524,19 +460,16 @@ class FactLoader:
             df['dispositivo_id'] = df['dispositivo_key'].map(dispositivo_map)
             df['navegador_id'] = df['navegador'].str.upper().map(navegador_map)
 
-            # Eliminar columnas intermedias
             df = df.drop(['tipo_dispositivo', 'dispositivo', 'sistema_operativo',
                          'navegador', 'dispositivo_key'], axis=1)
 
-            # Validar que no haya NULLs críticos
             null_count = df[['dispositivo_id', 'navegador_id']].isna().sum()
             if null_count.any():
                 logger.warning(f"  ⚠ Valores NULL encontrados: {null_count.to_dict()}")
-                # Filtrar registros con NULLs en campos requeridos
+
                 df = df.dropna(subset=['dispositivo_id', 'navegador_id'])
                 logger.warning(f"  Registros filtrados. Nuevos total: {len(df):,}")
 
-            # Reordenar columnas para que coincidan con el INSERT
             column_order = [
                 'tiempo_key', 'cliente_id', 'producto_id',
                 'dispositivo_id', 'navegador_id',
@@ -546,7 +479,6 @@ class FactLoader:
             ]
             df = df[column_order]
 
-            # Insertar en DW
             logger.info("  Insertando en fact_busquedas...")
             cursor_dw.fast_executemany = False
 
@@ -562,13 +494,13 @@ class FactLoader:
             """
 
             BATCH_SIZE = 5000
-            COMMIT_EVERY = 10000  # Commit cada 10k registros
-            CHECKPOINT_EVERY = 20000  # Checkpoint cada 20k para liberar log
+            COMMIT_EVERY = 10000
+            CHECKPOINT_EVERY = 20000
             total_insertados = 0
 
             for i in range(0, len(df), BATCH_SIZE):
                 batch = df.iloc[i:i + BATCH_SIZE]
-                # Convertir cada fila a tupla de tipos nativos Python
+
                 data_batch = []
                 for _, row in batch.iterrows():
                     converted_row = tuple(
@@ -579,12 +511,10 @@ class FactLoader:
                 cursor_dw.executemany(insert_sql, data_batch)
                 total_insertados += len(batch)
 
-                # Commit frecuente cada COMMIT_EVERY registros
                 if total_insertados % COMMIT_EVERY == 0:
                     self.conn_dw.commit()
                     logger.info(f"    Insertados: {total_insertados:,} / {len(df):,} (commit)")
 
-                    # Checkpoint y limpieza de log cada CHECKPOINT_EVERY
                     if total_insertados % CHECKPOINT_EVERY == 0:
                         try:
                             cursor_dw.execute("CHECKPOINT")
@@ -593,7 +523,6 @@ class FactLoader:
                         except Exception as log_err:
                             logger.warning(f"    ⚠ No se pudo liberar log: {log_err}")
 
-            # Commit final para cualquier registro restante
             self.conn_dw.commit()
             cursor_dw.close()
 

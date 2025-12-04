@@ -1,12 +1,8 @@
 """
 ================================================================================
-MÓDULO DE PROYECCIONES - SERIES TEMPORALES
-================================================================================
-Implementa modelos de series temporales para predicción de ventas futuras
-Soporta: ARIMA, Exponential Smoothing, y modelos simples
+MÓDULO DE PROYECCIONES
 ================================================================================
 """
-
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
@@ -27,19 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class ModeloProyeccionVentas:
-    """
-    Clase para proyección de ventas usando series temporales
-    Implementa ARIMA y Exponential Smoothing
-    """
 
     def __init__(self, conn: Union[pyodbc.Connection, Engine]):
-        """
-        Inicializa el modelo de proyección
 
-        Args:
-            conn: Conexión pyodbc o SQLAlchemy Engine a la base de datos DW.
-                  Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
-        """
         self.conn = conn
         self.modelo = None
         self.tipo_modelo = None
@@ -54,20 +40,9 @@ class ModeloProyeccionVentas:
                                granularidad: str = 'mes',
                                agregacion: str = 'total',
                                filtros: Dict = None) -> pd.DataFrame:
-        """
-        Extrae serie temporal de ventas
 
-        Args:
-            granularidad: 'dia', 'semana', 'mes', 'trimestre'
-            agregacion: 'total', 'promedio', 'cantidad'
-            filtros: Diccionario con filtros opcionales (categoria, provincia, etc.)
-
-        Returns:
-            DataFrame con serie temporal
-        """
         logger.info(f"Extrayendo serie temporal (granularidad: {granularidad}, agregación: {agregacion})...")
 
-        # Construir query según granularidad
         if granularidad == 'dia':
             grupo_temporal = "t.FECHA_CAL"
             orden_temporal = "t.FECHA_CAL"
@@ -83,7 +58,6 @@ class ModeloProyeccionVentas:
         else:
             raise ValueError(f"Granularidad no soportada: {granularidad}")
 
-        # Seleccionar métrica de agregación
         if agregacion == 'total':
             metrica = "SUM(fv.monto_total) AS valor"
         elif agregacion == 'promedio':
@@ -93,7 +67,6 @@ class ModeloProyeccionVentas:
         else:
             raise ValueError(f"Agregación no soportada: {agregacion}")
 
-        # Construir filtros
         condiciones_filtro = ["fv.venta_cancelada = 0"]
 
         if filtros:
@@ -106,7 +79,6 @@ class ModeloProyeccionVentas:
 
         filtro_where = " AND ".join(condiciones_filtro)
 
-        # Query con CTE para agrupación correcta por venta_id
         if granularidad == 'dia':
             query = f"""
                 WITH VentasAgrupadas AS (
@@ -212,7 +184,6 @@ class ModeloProyeccionVentas:
 
         df = pd.read_sql(query, self.conn)
 
-        # Convertir a serie temporal
         df['fecha'] = pd.to_datetime(df['fecha'])
         df = df.set_index('fecha')
         df = df.sort_index()
@@ -224,12 +195,7 @@ class ModeloProyeccionVentas:
         return df
 
     def analizar_estacionariedad(self) -> Dict:
-        """
-        Analiza si la serie es estacionaria usando prueba Augmented Dickey-Fuller
 
-        Returns:
-            Dict con resultados de la prueba
-        """
         if self.serie_temporal is None:
             raise ValueError("Debe extraer la serie temporal primero")
 
@@ -251,15 +217,7 @@ class ModeloProyeccionVentas:
         return resultado
 
     def dividir_serie(self, test_size: int = 6) -> Tuple[pd.Series, pd.Series]:
-        """
-        Divide la serie en entrenamiento y prueba
 
-        Args:
-            test_size: Número de períodos para prueba
-
-        Returns:
-            Tuple (train, test)
-        """
         if self.serie_temporal is None:
             raise ValueError("Debe extraer la serie temporal primero")
 
@@ -280,23 +238,14 @@ class ModeloProyeccionVentas:
     def entrenar_arima(self,
                        order: Tuple[int, int, int] = None,
                        buscar_orden: bool = True) -> ARIMA:
-        """
-        Entrena modelo ARIMA
 
-        Args:
-            order: Orden del modelo (p, d, q)
-            buscar_orden: Si True, busca el mejor orden automáticamente
-
-        Returns:
-            Modelo ARIMA entrenado
-        """
         if self.datos_entrenamiento is None:
             raise ValueError("Debe dividir la serie primero")
 
         logger.info("Entrenando modelo ARIMA...")
 
         if buscar_orden or order is None:
-            # Búsqueda simple de mejores parámetros
+
             logger.info("Buscando mejores parámetros ARIMA...")
             order = self._buscar_mejor_arima()
 
@@ -315,16 +264,10 @@ class ModeloProyeccionVentas:
         return self.modelo_fit
 
     def _buscar_mejor_arima(self) -> Tuple[int, int, int]:
-        """
-        Busca el mejor orden ARIMA usando grid search simple
 
-        Returns:
-            Mejor orden (p, d, q)
-        """
         mejor_aic = np.inf
         mejor_orden = None
 
-        # Grid search simplificado
         for p in range(0, 3):
             for d in range(0, 2):
                 for q in range(0, 3):
@@ -346,16 +289,7 @@ class ModeloProyeccionVentas:
     def entrenar_exponential_smoothing(self,
                                        seasonal: str = 'add',
                                        seasonal_periods: int = 12) -> ExponentialSmoothing:
-        """
-        Entrena modelo de Exponential Smoothing (Holt-Winters)
 
-        Args:
-            seasonal: Tipo de estacionalidad ('add', 'mul', o None)
-            seasonal_periods: Número de períodos estacionales
-
-        Returns:
-            Modelo entrenado
-        """
         if self.datos_entrenamiento is None:
             raise ValueError("Debe dividir la serie primero")
 
@@ -380,14 +314,12 @@ class ModeloProyeccionVentas:
         return self.modelo_fit
 
     def _evaluar_modelo(self):
-        """Evalúa el modelo en el conjunto de prueba"""
         if self.datos_prueba is None:
             return
 
         # Predecir en test
         predicciones = self.modelo_fit.forecast(steps=len(self.datos_prueba))
 
-        # Convertir predicciones a Series con índice alineado
         if isinstance(predicciones, pd.Series):
             predicciones_arr = predicciones.values
         else:
@@ -417,16 +349,7 @@ class ModeloProyeccionVentas:
     def proyectar(self,
                   periodos: int = 12,
                   intervalo_confianza: float = 0.95) -> pd.DataFrame:
-        """
-        Genera proyecciones futuras
 
-        Args:
-            periodos: Número de períodos a proyectar
-            intervalo_confianza: Nivel de confianza para intervalos
-
-        Returns:
-            DataFrame con proyecciones e intervalos
-        """
         if self.modelo_fit is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -455,7 +378,6 @@ class ModeloProyeccionVentas:
         frecuencia = pd.infer_freq(self.serie_temporal.index)
 
         if frecuencia is None:
-            # Inferir frecuencia manualmente
             diff = (self.serie_temporal.index[-1] - self.serie_temporal.index[-2]).days
             if diff <= 1:
                 frecuencia = 'D'
@@ -490,20 +412,14 @@ class ModeloProyeccionVentas:
         return df_proyecciones
 
     def obtener_resumen_completo(self) -> Dict:
-        """
-        Obtiene resumen completo del análisis
 
-        Returns:
-            Dict con datos históricos, predicciones test, y proyecciones
-        """
         if self.modelo_fit is None:
             raise ValueError("Debe entrenar el modelo primero")
 
-        # Datos históricos
         historico = self.serie_temporal.copy()
         historico['tipo'] = 'Histórico'
 
-        # Predicciones en test (si existen)
+        # Predicciones en test
         if self.datos_prueba is not None:
             pred_test = self.modelo_fit.forecast(steps=len(self.datos_prueba))
 
@@ -523,15 +439,7 @@ class ModeloProyeccionVentas:
         }
 
     def guardar_modelo(self, ruta: str) -> str:
-        """
-        Guarda el modelo entrenado
 
-        Args:
-            ruta: Ruta base donde guardar
-
-        Returns:
-            Ruta del archivo guardado
-        """
         if self.modelo_fit is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -549,12 +457,7 @@ class ModeloProyeccionVentas:
         return ruta_modelo
 
     def cargar_modelo(self, ruta_modelo: str):
-        """
-        Carga un modelo previamente entrenado
 
-        Args:
-            ruta_modelo: Ruta al modelo
-        """
         datos = joblib.load(ruta_modelo)
 
         self.modelo_fit = datos['modelo']

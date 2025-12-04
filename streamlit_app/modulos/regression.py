@@ -2,11 +2,7 @@
 ================================================================================
 MÓDULO DE REGRESIÓN - PREDICCIÓN DE VENTAS
 ================================================================================
-Implementa regresión lineal múltiple para predecir ventas
-Variables: mes, categoría, provincia, almacén
-================================================================================
 """
-
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
@@ -27,19 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class ModeloRegresionVentas:
-    """
-    Clase para predicción de ventas usando regresión múltiple
-    Soporta múltiples algoritmos: Linear, Ridge, Lasso, Random Forest, Gradient Boosting
-    """
 
     def __init__(self, conn: Union[pyodbc.Connection, Engine]):
-        """
-        Inicializa el modelo de regresión
 
-        Args:
-            conn: Conexión pyodbc o SQLAlchemy Engine a la base de datos DW.
-                  Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
-        """
         self.conn = conn
         self.scaler = StandardScaler()
         self.label_encoders = {}
@@ -53,19 +39,9 @@ class ModeloRegresionVentas:
         self.metricas = None
 
     def extraer_datos_ventas(self, limite: Optional[int] = None) -> pd.DataFrame:
-        """
-        Extrae datos agregados de ventas para entrenamiento
-        Usa CTE con agrupación por venta_id para evitar duplicados en cálculos
 
-        Args:
-            limite: Límite de registros (None para todos)
-
-        Returns:
-            DataFrame con datos agregados de ventas
-        """
         logger.info("Extrayendo datos de ventas para regresión (con agrupación correcta por venta_id)...")
 
-        # Query optimizada con CTE por venta_id para obtener datos agregados correctos
         query = """
             WITH VentasAgrupadas AS (
                 -- Agrupar primero por venta_id para evitar duplicados
@@ -158,18 +134,7 @@ class ModeloRegresionVentas:
                           variable_objetivo: str = 'monto_ventas',
                           variables_categoricas: List[str] = None,
                           variables_numericas: List[str] = None) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        Prepara features para entrenamiento
 
-        Args:
-            df: DataFrame con datos
-            variable_objetivo: Nombre de la variable objetivo
-            variables_categoricas: Lista de variables categóricas a incluir
-            variables_numericas: Lista de variables numéricas a incluir
-
-        Returns:
-            Tuple (X, y) con features y variable objetivo
-        """
         logger.info("Preparando features para regresión...")
 
         df = df.copy()
@@ -208,13 +173,10 @@ class ModeloRegresionVentas:
                 df_encoded[f'{col}_encoded'] = le.fit_transform(df[col].astype(str))
                 self.label_encoders[col] = le
 
-        # Crear lista de features
         features_finales = []
 
-        # Agregar variables numéricas
         features_finales.extend([col for col in variables_numericas if col in df.columns])
 
-        # Agregar variables categóricas codificadas
         features_finales.extend([f'{col}_encoded' for col in variables_categoricas if col in df.columns])
 
         # Crear X e y
@@ -234,18 +196,7 @@ class ModeloRegresionVentas:
                       y: pd.Series,
                       test_size: float = 0.2,
                       random_state: int = 42) -> Tuple:
-        """
-        Divide datos en entrenamiento y prueba
 
-        Args:
-            X: Features
-            y: Variable objetivo
-            test_size: Proporción de datos para prueba
-            random_state: Semilla aleatoria
-
-        Returns:
-            Tuple (X_train, X_test, y_train, y_test)
-        """
         logger.info(f"Dividiendo datos (test_size={test_size})...")
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
@@ -272,16 +223,7 @@ class ModeloRegresionVentas:
     def entrenar_modelo(self,
                         tipo_modelo: str = 'linear',
                         **kwargs) -> object:
-        """
-        Entrena el modelo de regresión
 
-        Args:
-            tipo_modelo: Tipo de modelo ('linear', 'ridge', 'lasso', 'random_forest', 'gradient_boosting')
-            **kwargs: Parámetros adicionales del modelo
-
-        Returns:
-            Modelo entrenado
-        """
         logger.info(f"Entrenando modelo: {tipo_modelo}...")
 
         self.tipo_modelo = tipo_modelo
@@ -327,16 +269,7 @@ class ModeloRegresionVentas:
         return self.modelo
 
     def _calcular_metricas(self, y_real: pd.Series, y_pred: np.ndarray) -> Dict:
-        """
-        Calcula métricas de evaluación
 
-        Args:
-            y_real: Valores reales
-            y_pred: Valores predichos
-
-        Returns:
-            Dict con métricas
-        """
         r2 = r2_score(y_real, y_pred)
         rmse = np.sqrt(mean_squared_error(y_real, y_pred))
         mae = mean_absolute_error(y_real, y_pred)
@@ -353,15 +286,7 @@ class ModeloRegresionVentas:
         }
 
     def cross_validation(self, cv: int = 5) -> Dict:
-        """
-        Realiza validación cruzada
 
-        Args:
-            cv: Número de folds
-
-        Returns:
-            Dict con scores de CV
-        """
         logger.info(f"Realizando validación cruzada ({cv} folds)...")
 
         if self.modelo is None:
@@ -390,15 +315,7 @@ class ModeloRegresionVentas:
         return resultado
 
     def obtener_importancia_features(self, top_n: int = 10) -> pd.DataFrame:
-        """
-        Obtiene la importancia de features
 
-        Args:
-            top_n: Número de features más importantes a retornar
-
-        Returns:
-            DataFrame con importancia de features
-        """
         if self.modelo is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -424,15 +341,7 @@ class ModeloRegresionVentas:
         return df_importancia.head(top_n)
 
     def predecir(self, X_nuevo: pd.DataFrame) -> np.ndarray:
-        """
-        Realiza predicciones con nuevos datos
 
-        Args:
-            X_nuevo: DataFrame con features
-
-        Returns:
-            Array con predicciones
-        """
         if self.modelo is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -442,12 +351,7 @@ class ModeloRegresionVentas:
         return predicciones
 
     def analizar_residuos(self) -> pd.DataFrame:
-        """
-        Analiza residuos del modelo
 
-        Returns:
-            DataFrame con análisis de residuos
-        """
         if self.modelo is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -465,15 +369,7 @@ class ModeloRegresionVentas:
         return df_residuos
 
     def guardar_modelo(self, ruta: str) -> Dict[str, str]:
-        """
-        Guarda el modelo entrenado
 
-        Args:
-            ruta: Ruta base donde guardar
-
-        Returns:
-            Dict con rutas de archivos guardados
-        """
         if self.modelo is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -500,14 +396,7 @@ class ModeloRegresionVentas:
         }
 
     def cargar_modelo(self, ruta_modelo: str, ruta_scaler: str, ruta_encoders: str):
-        """
-        Carga un modelo previamente entrenado
 
-        Args:
-            ruta_modelo: Ruta al modelo
-            ruta_scaler: Ruta al scaler
-            ruta_encoders: Ruta a los encoders
-        """
         self.modelo = joblib.load(ruta_modelo)
         self.scaler = joblib.load(ruta_scaler)
         self.label_encoders = joblib.load(ruta_encoders)

@@ -1,11 +1,3 @@
-"""
-================================================================================
-UTILIDADES GLOBALES - STREAMLIT APP
-================================================================================
-Módulos de utilidad compartidos por toda la aplicación
-================================================================================
-"""
-
 from .db_connection import (
     DatabaseConnection,
     get_oltp_connection,

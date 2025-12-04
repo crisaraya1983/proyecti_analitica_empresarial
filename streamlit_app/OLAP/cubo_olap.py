@@ -1,11 +1,3 @@
-"""
-================================================================================
-MÓDULO CUBO OLAP - OPERACIONES MULTIDIMENSIONALES (CORREGIDO)
-================================================================================
-Nombres de columnas correctos según estructura real del DW
-================================================================================
-"""
-
 import pyodbc
 import pandas as pd
 from typing import Optional, List, Dict, Tuple, Union
@@ -15,22 +7,18 @@ from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
-# MAPEO DE COLUMNAS REALES
 COLUMN_MAPPING = {
-    # dim_producto
-    'nombre': 'nombre_producto',
-    'margen_unitario': None,  # NO EXISTE en dim_producto
 
-    # dim_cliente
-    'nombre_completo': None,  # NO EXISTE - se debe construir
+    'nombre': 'nombre_producto',
+    'margen_unitario': None,
+
+    'nombre_completo': None,
     'nombre': 'nombre_cliente',
     'apellido': 'apellido_cliente',
     'email': 'correo_electronico',
 
-    # dim_almacen
     'nombre': 'nombre_almacen',
 
-    # dim_tiempo
     'DIA_SEMANA_NOMBRE': 'DIA_SEM_NOMBRE',
     'MES_ABR': 'MES_CAL_ABRV',
     'DIA_SEMANA_ABR': 'DIA_SEM_ABRV',
@@ -38,25 +26,14 @@ COLUMN_MAPPING = {
 
 
 class CuboOLAP:
-    """
-    Clase para realizar operaciones OLAP sobre el Data Warehouse Ecommerce
-    Con nombres de columnas corregidos según estructura real
-    """
 
     def __init__(self, connection: Union[pyodbc.Connection, Engine]):
-        """
-        Inicializa el cubo OLAP
 
-        Args:
-            connection: Puede ser una conexión pyodbc o un SQLAlchemy Engine.
-                       Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
-        """
         self.conn = connection
         self.cache = {}
         logger.info("CuboOLAP inicializado")
 
     def _execute_query(self, query: str, params: Tuple = None) -> pd.DataFrame:
-        """Ejecuta una query y retorna un DataFrame"""
         try:
             if params:
                 df = pd.read_sql(query, self.conn, params=params)
@@ -67,12 +44,8 @@ class CuboOLAP:
             logger.error(f"Error ejecutando query: {str(e)}")
             raise
 
-    # ========================================================================
-    # OPERACIONES OLAP BÁSICAS
-    # ========================================================================
-
     def slice(self, dimension: str, value: any, measure: str = "monto_total") -> pd.DataFrame:
-        """SLICE: Selecciona un subrectángulo del cubo fijando una dimensión (con agrupación correcta por venta_id)"""
+
         logger.info(f"SLICE: {dimension} = {value}")
 
         dimension_queries = {
@@ -203,7 +176,6 @@ class CuboOLAP:
         return self._execute_query(dimension_queries[dimension], (value,))
 
     def slice_drill_down(self, dimension: str, value: any) -> pd.DataFrame:
-        """Obtiene el desglose detallado después de aplicar SLICE para mostrar en gráficos"""
         logger.info(f"SLICE Drill-Down: {dimension} = {value}")
 
         drill_down_queries = {
@@ -315,10 +287,8 @@ class CuboOLAP:
         return self._execute_query(drill_down_queries[dimension], (value,))
 
     def dice(self, filters: Dict[str, any]) -> pd.DataFrame:
-        """DICE: Selecciona subrectángulo del cubo con múltiples filtros (con agrupación correcta por venta_id)"""
         logger.info(f"DICE: aplicando {len(filters)} filtros")
 
-        # Construir WHERE clause dinámicamente
         where_conditions = ["fv.venta_cancelada = 0"]
         params = []
 
@@ -398,7 +368,6 @@ class CuboOLAP:
         return self._execute_query(query, tuple(params) if params else None)
 
     def drill_down(self, dimension: str, current_level: int = 0, filters: Dict = None) -> pd.DataFrame:
-        """DRILL-DOWN: Desciende en la jerarquía de una dimensión"""
         logger.info(f"DRILL-DOWN: {dimension} nivel {current_level}")
 
         if dimension == 'tiempo':
@@ -485,7 +454,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def roll_up(self, dimension: str, target_level: int = 0) -> pd.DataFrame:
-        """ROLL-UP: Asciende en la jerarquía de una dimensión"""
+
         logger.info(f"ROLL-UP: {dimension} a nivel {target_level}")
 
         if dimension == 'geografia':
@@ -541,7 +510,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def pivot(self, rows: str, columns: str, values: str = "monto_total") -> pd.DataFrame:
-        """PIVOT: Rota dimensiones para diferentes vistas tabulares (con agrupación correcta por venta_id)"""
+
         logger.info(f"PIVOT: filas={rows}, columnas={columns}, valores={values}")
 
         query = """
@@ -591,12 +560,8 @@ class CuboOLAP:
         pivoted = df.pivot_table(index=row_col_map[rows], columns=row_col_map[columns], values=values_col_map[values], aggfunc='sum', fill_value=0)
         return pivoted
 
-    # ========================================================================
-    # CONSULTAS OLAP PREDEFINIDAS (CORREGIDAS)
-    # ========================================================================
-
     def get_ventas_por_tiempo(self, granularidad: str = 'mes') -> pd.DataFrame:
-        """Ventas agregadas por período de tiempo (con agrupación correcta por venta_id)"""
+
         logger.info(f"Ventas por tiempo (granularidad: {granularidad})")
 
         if granularidad == 'anio':
@@ -715,7 +680,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_categoria(self) -> pd.DataFrame:
-        """Ventas por categoría de producto (con agrupación correcta por venta_id)"""
+
         logger.info("Ventas por categoría")
 
         query = """
@@ -751,7 +716,6 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_region(self, nivel: str = 'provincia') -> pd.DataFrame:
-        """Ventas por región geográfica (con agrupación correcta por venta_id)"""
         logger.info(f"Ventas por región (nivel: {nivel})")
 
         if nivel == 'provincia':
@@ -856,7 +820,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def get_ventas_por_cliente(self, top_n: int = 20, segmento: str = None) -> pd.DataFrame:
-        """Top clientes (con agrupación correcta por venta_id)"""
+
         logger.info(f"Top {top_n} clientes")
 
         query = f"""
@@ -891,7 +855,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def top_productos(self, top_n: int = 10) -> pd.DataFrame:
-        """Obtiene los N productos más vendidos (con agrupación correcta por venta_id)"""
+
         logger.info(f"Top {top_n} productos")
 
         query = f"""
@@ -926,7 +890,7 @@ class CuboOLAP:
         return self._execute_query(query)
 
     def resumen_negocio(self) -> Dict:
-        """Obtiene un resumen de KPIs principales del negocio"""
+
         logger.info("Generando resumen de negocio")
 
         query = """
@@ -1072,10 +1036,9 @@ class CuboOLAP:
         return result.iloc[0].to_dict()
 
     def analisis_comportamiento_web(self) -> Dict:
-        """Analiza el comportamiento web de usuarios usando fact_comportamiento_web"""
+
         logger.info("Analizando comportamiento web")
 
-        # Eventos por tipo
         query_eventos_tipo = """
             SELECT
                 te.tipo_evento,
@@ -1091,7 +1054,6 @@ class CuboOLAP:
             ORDER BY total_eventos DESC
         """
 
-        # Eventos por dispositivo
         query_dispositivos = """
             SELECT
                 d.tipo_dispositivo,
@@ -1107,7 +1069,6 @@ class CuboOLAP:
             ORDER BY total_eventos DESC
         """
 
-        # Navegadores más usados
         query_navegadores = """
             SELECT
                 n.navegador,
@@ -1122,7 +1083,6 @@ class CuboOLAP:
             ORDER BY total_eventos DESC
         """
 
-        # Productos más vistos (eventos relacionados con productos)
         query_productos_vistos = """
             SELECT TOP 20
                 p.nombre_producto AS producto,
@@ -1139,7 +1099,6 @@ class CuboOLAP:
             ORDER BY total_visualizaciones DESC
         """
 
-        # Eventos por tiempo (tendencia)
         query_eventos_tiempo = """
             SELECT
                 t.FECHA_CAL AS fecha,
@@ -1163,10 +1122,9 @@ class CuboOLAP:
         }
 
     def analisis_busquedas(self) -> Dict:
-        """Analiza las búsquedas de usuarios usando fact_busquedas"""
+
         logger.info("Analizando búsquedas")
 
-        # Búsquedas por dispositivo
         query_busquedas_dispositivo = """
             SELECT
                 d.tipo_dispositivo,
@@ -1182,7 +1140,6 @@ class CuboOLAP:
             ORDER BY total_busquedas DESC
         """
 
-        # Búsquedas por navegador
         query_busquedas_navegador = """
             SELECT
                 n.navegador,
@@ -1197,7 +1154,6 @@ class CuboOLAP:
             ORDER BY total_busquedas DESC
         """
 
-        # Productos más buscados (que generaron resultados)
         query_productos_buscados = """
             SELECT TOP 20
                 p.nombre_producto AS producto,
@@ -1215,7 +1171,6 @@ class CuboOLAP:
             ORDER BY total_busquedas DESC
         """
 
-        # Búsquedas por tiempo
         query_busquedas_tiempo = """
             SELECT
                 t.FECHA_CAL AS fecha,
@@ -1230,7 +1185,6 @@ class CuboOLAP:
             ORDER BY t.FECHA_CAL DESC
         """
 
-        # Resumen general de búsquedas
         query_resumen = """
             SELECT
                 COUNT(*) AS total_busquedas,
@@ -1252,10 +1206,7 @@ class CuboOLAP:
         }
 
     def get_funnel_conversion(self) -> pd.DataFrame:
-        """
-        Crea un funnel de conversión basado en los eventos web
-        desde eventos iniciales hasta conversión en venta
-        """
+
         logger.info("Generando funnel de conversión")
 
         query = """
@@ -1313,7 +1264,6 @@ class CuboOLAP:
 
         return self._execute_query(query)
 
-    # Alias para compatibilidad
     ventas_por_tiempo = get_ventas_por_tiempo
     ventas_por_categoria = get_ventas_por_categoria
     ventas_por_geografia = get_ventas_por_region

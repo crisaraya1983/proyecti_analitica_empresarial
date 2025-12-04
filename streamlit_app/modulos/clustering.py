@@ -2,11 +2,7 @@
 ================================================================================
 MÓDULO DE CLUSTERING - SEGMENTACIÓN DE CLIENTES
 ================================================================================
-Implementa K-Means para segmentar clientes basado en comportamiento de compra
-Características: RFM (Recencia, Frecuencia, Monto) + Categorías preferidas
-================================================================================
 """
-
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
@@ -27,19 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class SegmentacionClientes:
-    """
-    Clase para segmentación de clientes usando K-Means
-    Implementa análisis RFM y clustering multidimensional
-    """
 
     def __init__(self, conn: Union[pyodbc.Connection, Engine]):
-        """
-        Inicializa el segmentador de clientes
 
-        Args:
-            conn: Conexión pyodbc o SQLAlchemy Engine a la base de datos DW.
-                  Se recomienda usar SQLAlchemy Engine para evitar warnings de pandas.
-        """
         self.conn = conn
         self.scaler = StandardScaler()
         self.modelo_kmeans = None
@@ -50,19 +36,9 @@ class SegmentacionClientes:
         self.n_clusters_optimo = None
 
     def extraer_datos_clientes(self, limite: Optional[int] = None) -> pd.DataFrame:
-        """
-        Extrae características RFM y comportamiento de clientes del DW
-        Usa CTE con agrupación por venta_id para evitar duplicados
 
-        Args:
-            limite: Límite de clientes a procesar (None para todos)
-
-        Returns:
-            DataFrame con características de clientes
-        """
         logger.info("Extrayendo datos de clientes para clustering (con agrupación correcta por venta_id)...")
 
-        # Query optimizada con CTE por venta_id para obtener métricas RFM correctas
         query = """
             WITH VentasAgrupadas AS (
                 -- Agrupar primero por venta_id para evitar duplicados
@@ -151,7 +127,6 @@ class SegmentacionClientes:
             ORDER BY cm.monto_total DESC
         """
 
-        # Aplicar límite si se especifica
         limit_clause = f"TOP {limite}" if limite else ""
         query = query.format(limit_clause=limit_clause)
 
@@ -161,18 +136,9 @@ class SegmentacionClientes:
         return df
 
     def preparar_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Prepara las características para clustering
 
-        Args:
-            df: DataFrame con datos de clientes
-
-        Returns:
-            Tuple (df_original, df_features_escalado)
-        """
         logger.info("Preparando features para clustering...")
 
-        # Seleccionar features numéricas para clustering
         features_numericas = [
             'recencia_dias',
             'frecuencia_compras',
@@ -184,10 +150,8 @@ class SegmentacionClientes:
             'categorias_diferentes'
         ]
 
-        # Crear dataframe de features
         df_features = df[features_numericas].copy()
 
-        # Escalar features
         df_features_escalado = pd.DataFrame(
             self.scaler.fit_transform(df_features),
             columns=features_numericas,
@@ -204,17 +168,7 @@ class SegmentacionClientes:
                                          df_features: pd.DataFrame,
                                          k_min: int = 2,
                                          k_max: int = 10) -> Dict:
-        """
-        Determina el número óptimo de clusters usando método del codo y silhouette
 
-        Args:
-            df_features: DataFrame con features escaladas
-            k_min: Número mínimo de clusters a probar
-            k_max: Número máximo de clusters a probar
-
-        Returns:
-            Dict con métricas por cada k
-        """
         logger.info(f"Buscando número óptimo de clusters (k={k_min} a {k_max})...")
 
         resultados = {
@@ -241,7 +195,7 @@ class SegmentacionClientes:
 
             logger.info(f"k={k}: inercia={inercia:.2f}, silhouette={silhouette:.3f}, DB={davies_bouldin:.3f}")
 
-        # Determinar k óptimo (mayor silhouette score)
+        # Determinar k óptimo
         idx_mejor = np.argmax(resultados['silhouette'])
         self.n_clusters_optimo = resultados['k_values'][idx_mejor]
 
@@ -250,16 +204,7 @@ class SegmentacionClientes:
         return resultados
 
     def entrenar_modelo(self, df_features: pd.DataFrame, n_clusters: int) -> KMeans:
-        """
-        Entrena el modelo K-Means con el número de clusters especificado
 
-        Args:
-            df_features: DataFrame con features escaladas
-            n_clusters: Número de clusters
-
-        Returns:
-            Modelo K-Means entrenado
-        """
         logger.info(f"Entrenando modelo K-Means con {n_clusters} clusters...")
 
         self.modelo_kmeans = KMeans(
@@ -280,15 +225,7 @@ class SegmentacionClientes:
         return self.modelo_kmeans
 
     def reducir_dimensionalidad_pca(self, df_features: pd.DataFrame) -> pd.DataFrame:
-        """
-        Reduce dimensionalidad usando PCA a 2 componentes para visualización
 
-        Args:
-            df_features: DataFrame con features escaladas
-
-        Returns:
-            DataFrame con 2 componentes principales
-        """
         logger.info("Reduciendo dimensionalidad con PCA...")
 
         self.pca_model = PCA(n_components=2, random_state=42)
@@ -307,16 +244,7 @@ class SegmentacionClientes:
 
     def reducir_dimensionalidad_tsne(self, df_features: pd.DataFrame,
                                       perplexity: int = 30) -> pd.DataFrame:
-        """
-        Reduce dimensionalidad usando t-SNE a 2 componentes
 
-        Args:
-            df_features: DataFrame con features escaladas
-            perplexity: Parámetro de t-SNE
-
-        Returns:
-            DataFrame con 2 componentes t-SNE
-        """
         logger.info("Reduciendo dimensionalidad con t-SNE...")
 
         tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
@@ -331,16 +259,7 @@ class SegmentacionClientes:
         return df_tsne
 
     def interpretar_clusters(self, df_original: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
-        """
-        Interpreta y caracteriza cada cluster
 
-        Args:
-            df_original: DataFrame original con datos de clientes
-            labels: Etiquetas de cluster asignadas
-
-        Returns:
-            DataFrame con estadísticas por cluster
-        """
         logger.info("Interpretando clusters...")
 
         df_con_clusters = df_original.copy()
@@ -369,7 +288,6 @@ class SegmentacionClientes:
 
         df_interpretacion = pd.DataFrame(metricas)
 
-        # Asignar nombres descriptivos a los clusters
         df_interpretacion['nombre_segmento'] = df_interpretacion.apply(
             self._asignar_nombre_segmento, axis=1
         )
@@ -377,15 +295,7 @@ class SegmentacionClientes:
         return df_interpretacion
 
     def _asignar_nombre_segmento(self, row: pd.Series) -> str:
-        """
-        Asigna un nombre descriptivo al cluster basado en sus características
 
-        Args:
-            row: Fila con estadísticas del cluster
-
-        Returns:
-            Nombre descriptivo del segmento
-        """
         # Criterios basados en RFM
         recencia = row['recencia_promedio']
         frecuencia = row['frecuencia_promedio']
@@ -420,16 +330,7 @@ class SegmentacionClientes:
             return "🔵 Ocasionales - Engagement Medio"
 
     def obtener_clientes_por_cluster(self, cluster_id: int, top_n: int = 10) -> pd.DataFrame:
-        """
-        Obtiene los clientes de un cluster específico
 
-        Args:
-            cluster_id: ID del cluster
-            top_n: Número de clientes a retornar
-
-        Returns:
-            DataFrame con clientes del cluster
-        """
         if self.datos_originales is None or self.labels is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -438,18 +339,12 @@ class SegmentacionClientes:
 
         df_cluster = df_con_clusters[df_con_clusters['cluster'] == cluster_id]
 
-        # Ordenar por monto total descendente
         df_cluster = df_cluster.sort_values('monto_total', ascending=False)
 
         return df_cluster.head(top_n)
 
     def guardar_modelo(self, ruta: str):
-        """
-        Guarda el modelo entrenado y el scaler
 
-        Args:
-            ruta: Ruta base donde guardar los archivos
-        """
         if self.modelo_kmeans is None:
             raise ValueError("Debe entrenar el modelo primero")
 
@@ -477,14 +372,7 @@ class SegmentacionClientes:
         }
 
     def cargar_modelo(self, ruta_modelo: str, ruta_scaler: str, ruta_pca: str = None):
-        """
-        Carga un modelo previamente entrenado
 
-        Args:
-            ruta_modelo: Ruta al modelo K-Means
-            ruta_scaler: Ruta al scaler
-            ruta_pca: Ruta al modelo PCA (opcional)
-        """
         self.modelo_kmeans = joblib.load(ruta_modelo)
         self.scaler = joblib.load(ruta_scaler)
 

@@ -1,13 +1,3 @@
-"""
-================================================================================
-PIPELINE PRINCIPAL ETL - ECOMMERCE DATA WAREHOUSE
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Orquestar el proceso completo de ETL desde OLTP a DW
-================================================================================
-"""
-
 import sys
 import os
 from datetime import datetime
@@ -21,7 +11,6 @@ from etl_logger import ETLLogger
 from load_dimensions import DimensionLoader
 from load_facts import FactLoader
 
-# Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -33,15 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class ETLPipeline:
-    """Clase principal para el pipeline ETL"""
 
     def __init__(self, use_secrets: bool = False):
-        """
-        Inicializa el pipeline ETL
 
-        Args:
-            use_secrets: Si True, usa Streamlit secrets para conexión
-        """
         self.use_secrets = use_secrets
         self.conn_oltp = None
         self.conn_dw = None
@@ -56,7 +39,6 @@ class ETLPipeline:
         }
 
     def conectar_bases_datos(self):
-        """Establece conexiones a bases de datos OLTP y DW"""
         logger.info("=" * 80)
         logger.info("CONECTANDO A BASES DE DATOS")
         logger.info("=" * 80)
@@ -75,7 +57,6 @@ class ETLPipeline:
             raise
 
     def desconectar_bases_datos(self):
-        """Cierra conexiones a bases de datos"""
         logger.info("Cerrando conexiones a bases de datos...")
 
         if self.conn_oltp:
@@ -87,18 +68,12 @@ class ETLPipeline:
             logger.info("✓ Conexión DW cerrada")
 
     def validar_prerequisitos(self) -> bool:
-        """
-        Valida que las bases de datos y tablas necesarias existan
 
-        Returns:
-            True si todo está correcto, False si hay errores
-        """
         logger.info("=" * 80)
         logger.info("VALIDANDO PREREQUISITOS")
         logger.info("=" * 80)
 
         try:
-            # Validar tablas OLTP
             cursor_oltp = self.conn_oltp.cursor()
             cursor_oltp.execute("""
                 SELECT COUNT(*) as count
@@ -116,7 +91,6 @@ class ETLPipeline:
                 logger.error("⚠ Faltan tablas en OLTP")
                 return False
 
-            # Validar tablas DW
             cursor_dw = self.conn_dw.cursor()
             cursor_dw.execute("""
                 SELECT COUNT(*) as count
@@ -130,7 +104,6 @@ class ETLPipeline:
                 logger.error("⚠ Faltan tablas en DW")
                 return False
 
-            # Validar que haya datos en OLTP
             cursor_oltp.execute("SELECT COUNT(*) FROM tiempo")
             count_tiempo = cursor_oltp.fetchone()[0]
 
@@ -164,7 +137,6 @@ class ETLPipeline:
             return False
 
     def ejecutar_dimensiones(self):
-        """Ejecuta la carga de todas las dimensiones"""
         logger.info("\n" + "=" * 80)
         logger.info("FASE 1: CARGA DE DIMENSIONES")
         logger.info("=" * 80 + "\n")
@@ -173,7 +145,6 @@ class ETLPipeline:
             dimension_loader = DimensionLoader(self.conn_oltp, self.conn_dw)
             self.results['dimensiones'] = dimension_loader.load_all_dimensions()
 
-            # Resumen de dimensiones
             logger.info("\n" + "-" * 80)
             logger.info("RESUMEN CARGA DE DIMENSIONES")
             logger.info("-" * 80)
@@ -196,7 +167,6 @@ class ETLPipeline:
             raise
 
     def ejecutar_hechos(self):
-        """Ejecuta la carga de todas las tablas de hechos"""
         logger.info("\n" + "=" * 80)
         logger.info("FASE 2: CARGA DE TABLAS DE HECHOS")
         logger.info("=" * 80 + "\n")
@@ -205,7 +175,6 @@ class ETLPipeline:
             fact_loader = FactLoader(self.conn_oltp, self.conn_dw)
             self.results['hechos'] = fact_loader.load_all_facts()
 
-            # Resumen de hechos
             logger.info("\n" + "-" * 80)
             logger.info("RESUMEN CARGA DE HECHOS")
             logger.info("-" * 80)
@@ -228,7 +197,6 @@ class ETLPipeline:
             raise
 
     def validar_resultados(self):
-        """Valida que los datos se hayan cargado correctamente"""
         logger.info("\n" + "=" * 80)
         logger.info("VALIDANDO RESULTADOS")
         logger.info("=" * 80)
@@ -236,23 +204,19 @@ class ETLPipeline:
         try:
             cursor_dw = self.conn_dw.cursor()
 
-            # Validar counts en DW
             logger.info("\nRegistros cargados en DW:")
 
-            # Dimensiones
             for dim in ['tiempo', 'producto', 'cliente', 'geografia', 'almacen',
                        'dispositivo', 'navegador', 'tipo_evento', 'estado_venta', 'metodo_pago', 'sesion']:
                 cursor_dw.execute(f"SELECT COUNT(*) FROM dim_{dim}")
                 count = cursor_dw.fetchone()[0]
                 logger.info(f"  dim_{dim:20} : {count:>10,}")
 
-            # Hechos
             for fact in ['ventas', 'comportamiento_web', 'busquedas']:
                 cursor_dw.execute(f"SELECT COUNT(*) FROM fact_{fact}")
                 count = cursor_dw.fetchone()[0]
                 logger.info(f"  fact_{fact:20} : {count:>10,}")
 
-            # Validar totales de ventas (debe coincidir OLTP vs DW)
             cursor_oltp = self.conn_oltp.cursor()
 
             cursor_oltp.execute("SELECT SUM(monto_total) FROM detalles_venta")
@@ -278,51 +242,36 @@ class ETLPipeline:
             self.results['errores'].append(f"Validación: {str(e)}")
 
     def ejecutar(self) -> dict:
-        """
-        Ejecuta el pipeline ETL completo
 
-        Returns:
-            Diccionario con resultados de la ejecución
-        """
         self.results['inicio'] = datetime.now()
         etl_logger = None
 
         try:
-            # Conectar a bases de datos
             self.conectar_bases_datos()
-
-            # Iniciar log en DW
             etl_logger = ETLLogger(self.conn_dw)
             etl_logger.iniciar_proceso("ETL_COMPLETO", "ALL")
 
-            # Validar prerequisitos
             if not self.validar_prerequisitos():
                 raise Exception("Prerequisitos no cumplidos")
 
-            # Ejecutar carga de dimensiones
             self.ejecutar_dimensiones()
 
-            # Ejecutar carga de hechos
             self.ejecutar_hechos()
 
-            # Validar resultados
             self.validar_resultados()
 
-            # Marcar como exitoso
             self.results['success'] = True
             self.results['fin'] = datetime.now()
             self.results['duracion_segundos'] = int(
                 (self.results['fin'] - self.results['inicio']).total_seconds()
             )
 
-            # Calcular totales
             total_extraidos = sum(r[0] for r in self.results['dimensiones'].values())
             total_extraidos += sum(r[0] for r in self.results['hechos'].values())
 
             total_insertados = sum(r[1] for r in self.results['dimensiones'].values())
             total_insertados += sum(r[1] for r in self.results['hechos'].values())
 
-            # Finalizar log
             if etl_logger:
                 etl_logger.finalizar_proceso(
                     registros_extraidos=total_extraidos,
@@ -330,7 +279,6 @@ class ETLPipeline:
                     estado="COMPLETADO"
                 )
 
-            # Resumen final
             logger.info("\n" + "=" * 80)
             logger.info("PROCESO ETL COMPLETADO EXITOSAMENTE")
             logger.info("=" * 80)
@@ -359,14 +307,12 @@ class ETLPipeline:
             logger.error("=" * 80 + "\n")
 
         finally:
-            # Desconectar bases de datos
             self.desconectar_bases_datos()
 
         return self.results
 
 
 def main():
-    """Función principal para ejecutar ETL desde línea de comandos"""
     logger.info("\n" + "=" * 80)
     logger.info("ECOMMERCE ETL PIPELINE")
     logger.info("=" * 80 + "\n")
@@ -374,7 +320,6 @@ def main():
     pipeline = ETLPipeline(use_secrets=False)
     results = pipeline.ejecutar()
 
-    # Retornar código de salida
     sys.exit(0 if results['success'] else 1)
 
 

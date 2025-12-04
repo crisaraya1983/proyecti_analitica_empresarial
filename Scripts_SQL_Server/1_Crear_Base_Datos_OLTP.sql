@@ -1,8 +1,5 @@
 -- =============================================
 -- Script: Creación de Base de Datos OLTP - Ecommerce
--- Descripción: Script completo para crear la base de datos relacional
---              de Ecommerce con todas sus tablas, relaciones e índices
--- Nota: Este script crea las estructuras vacías (sin datos)
 -- =============================================
 
 -- Crear la base de datos
@@ -220,13 +217,25 @@ GO
 -- Tabla: eventos_web
 CREATE TABLE [dbo].[eventos_web](
     [evento_id] [int] IDENTITY(1,1) NOT NULL,
+    [codigo_sesion] [nvarchar](100),
+    [numero_evento_en_sesion] [int],
+    [fecha_hora_evento] [datetime] NOT NULL,
     [cliente_id] [int] NULL,
-    [producto_id] [int] NULL,
-    [venta_id] [int] NULL,
-    [fecha_evento] [datetime] NOT NULL,
+    [cliente_reconocido] [bit],
     [tipo_evento] [nvarchar](50) NOT NULL,
+    [producto_id] [int] NULL,
+    [tiempo_pagina_segundos] [int],
+    [direccion_ip] [nvarchar](100) NULL,
+    [tipo_dispositivo] [nvarchar](100) NULL,
     [dispositivo] [nvarchar](50) NULL,
     [navegador] [nvarchar](50) NULL,
+    [sistema_operativo] [nvarchar](50) NULL,
+    [url_pagina] [nvarchar](100) NULL,
+    [url_anterior] [nvarchar](100) NULL,
+    [genero_venta] [bit],
+    [venta_id] [int] NULL,
+    [descripcion_evento] [nvarchar](500) NULL,
+    [fecha_creacion] [datetime] NULL,    
     PRIMARY KEY CLUSTERED ([evento_id] ASC)
     WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF,
           ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF)
@@ -273,8 +282,6 @@ CREATE TABLE [dbo].[tiempo](
 ) ON [PRIMARY];
 GO
 
--- =============================================
--- MENSAJE FINAL
--- =============================================
+
 PRINT 'Base de datos Ecommerce_OLTP creada exitosamente con todas las tablas y relaciones.';
 GO

@@ -924,8 +924,6 @@ with tab4:
                         st.markdown("---")
                         st.markdown("### Top 10 Productos Más Vistos")
                         df_productos = comportamiento['productos_vistos']
-
-                        # Filtrar productos que no sean "SIN PRODUCTO"
                         df_productos = df_productos[df_productos['producto'] != 'SIN PRODUCTO']
 
                         fig = px.bar(

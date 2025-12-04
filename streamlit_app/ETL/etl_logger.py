@@ -1,19 +1,8 @@
-"""
-================================================================================
-LOGGER PARA PROCESO ETL
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Gestionar logs y métricas del proceso ETL
-================================================================================
-"""
-
 import pyodbc
 from datetime import datetime
 from typing import Optional
 import logging
 
-# Configurar logging de Python
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -22,15 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class ETLLogger:
-    """Clase para gestionar logs del proceso ETL"""
 
     def __init__(self, conn_dw: pyodbc.Connection):
-        """
-        Inicializa el logger ETL
-
-        Args:
-            conn_dw: Conexión a la base de datos DW
-        """
         self.conn_dw = conn_dw
         self.log_id: Optional[int] = None
         self.fecha_inicio: Optional[datetime] = None
@@ -40,16 +22,7 @@ class ETLLogger:
         proceso_nombre: str,
         tabla_destino: str
     ) -> int:
-        """
-        Registra el inicio de un proceso ETL
 
-        Args:
-            proceso_nombre: Nombre del proceso
-            tabla_destino: Tabla que se cargará
-
-        Returns:
-            ID del log creado
-        """
         self.fecha_inicio = datetime.now()
 
         cursor = self.conn_dw.cursor()
@@ -83,17 +56,7 @@ class ETLLogger:
         estado: str = "COMPLETADO",
         mensaje_error: Optional[str] = None
     ):
-        """
-        Registra la finalización de un proceso ETL
 
-        Args:
-            registros_extraidos: Total de registros extraídos
-            registros_insertados: Total de registros insertados
-            registros_actualizados: Total de registros actualizados
-            registros_error: Total de registros con error
-            estado: Estado final (COMPLETADO o ERROR)
-            mensaje_error: Mensaje de error si aplica
-        """
         if self.log_id is None:
             logger.warning("No se puede finalizar proceso: log_id no existe")
             return
@@ -146,13 +109,7 @@ class ETLLogger:
             logger.info(log_msg)
 
     def registrar_error(self, mensaje_error: str, registros_extraidos: int = 0):
-        """
-        Registra un error en el proceso ETL
 
-        Args:
-            mensaje_error: Descripción del error
-            registros_extraidos: Registros que se habían extraído antes del error
-        """
         self.finalizar_proceso(
             registros_extraidos=registros_extraidos,
             estado="ERROR",
@@ -161,16 +118,7 @@ class ETLLogger:
 
     @staticmethod
     def obtener_ultimos_logs(conn_dw: pyodbc.Connection, limite: int = 10) -> list:
-        """
-        Obtiene los últimos logs del ETL
 
-        Args:
-            conn_dw: Conexión a la base de datos DW
-            limite: Número de logs a obtener
-
-        Returns:
-            Lista de diccionarios con los logs
-        """
         cursor = conn_dw.cursor()
         cursor.execute(f"""
             SELECT TOP {limite}
@@ -202,18 +150,9 @@ class ETLLogger:
 
     @staticmethod
     def obtener_resumen_ejecucion(conn_dw: pyodbc.Connection) -> dict:
-        """
-        Obtiene resumen de la última ejecución completa del ETL
 
-        Args:
-            conn_dw: Conexión a la base de datos DW
-
-        Returns:
-            Diccionario con el resumen
-        """
         cursor = conn_dw.cursor()
 
-        # Obtener la última fecha de inicio de un proceso completo
         cursor.execute("""
             SELECT TOP 1 fecha_inicio
             FROM etl_logs
@@ -228,7 +167,6 @@ class ETLLogger:
 
         ultima_fecha = row[0]
 
-        # Obtener resumen de esa ejecución
         cursor.execute("""
             SELECT
                 COUNT(*) as total_procesos,

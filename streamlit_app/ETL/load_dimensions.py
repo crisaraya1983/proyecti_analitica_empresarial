@@ -1,13 +1,3 @@
-"""
-================================================================================
-CARGA DE DIMENSIONES - ETL PIPELINE
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Cargar todas las tablas dimensionales desde OLTP a DW
-================================================================================
-"""
-
 import pyodbc
 import pandas as pd
 from typing import Dict, Tuple
@@ -18,24 +8,14 @@ logger = logging.getLogger(__name__)
 
 
 class DimensionLoader:
-    """Clase para cargar dimensiones desde OLTP a DW"""
 
     def __init__(self, conn_oltp: pyodbc.Connection, conn_dw: pyodbc.Connection):
-        """
-        Inicializa el cargador de dimensiones
 
-        Args:
-            conn_oltp: Conexión a Ecommerce_OLTP
-            conn_dw: Conexión a Ecommerce_DW
-        """
         self.conn_oltp = conn_oltp
         self.conn_dw = conn_dw
 
     def truncate_all_tables(self):
-        """
-        Limpia todas las tablas (hechos primero, luego dimensiones) para evitar conflictos de FK
-        Usa TRUNCATE cuando sea posible, DELETE cuando TRUNCATE falle por FK constraints
-        """
+
         logger.info("=" * 80)
         logger.info("LIMPIANDO TABLAS (HECHOS Y DIMENSIONES)")
         logger.info("=" * 80)
@@ -43,7 +23,6 @@ class DimensionLoader:
         cursor_dw = self.conn_dw.cursor()
 
         try:
-            # PASO 1: Limpiar tablas de HECHOS primero (no tienen FK salientes)
             fact_tables = ['fact_ventas', 'fact_comportamiento_web', 'fact_busquedas']
 
             logger.info("Limpiando tablas de hechos...")
@@ -53,7 +32,6 @@ class DimensionLoader:
                     self.conn_dw.commit()
                     logger.info(f"  OK - {table} limpiada (TRUNCATE)")
                 except Exception as e:
-                    # Si TRUNCATE falla, intentar con DELETE
                     try:
                         cursor_dw.execute(f"DELETE FROM {table}")
                         self.conn_dw.commit()
@@ -62,7 +40,6 @@ class DimensionLoader:
                         logger.error(f"  ERROR - No se pudo limpiar {table}: {str(e2)}")
                         raise
 
-            # PASO 2: Ahora limpiar las DIMENSIONES
             dimension_tables = [
                 'dim_tiempo', 'dim_producto', 'dim_cliente', 'dim_geografia',
                 'dim_almacen', 'dim_dispositivo', 'dim_navegador',
@@ -76,7 +53,6 @@ class DimensionLoader:
                     self.conn_dw.commit()
                     logger.info(f"  OK - {table} limpiada (TRUNCATE)")
                 except Exception as e:
-                    # Si TRUNCATE falla por FK, intentar con DELETE
                     try:
                         cursor_dw.execute(f"DELETE FROM {table}")
                         self.conn_dw.commit()
@@ -95,26 +71,19 @@ class DimensionLoader:
             cursor_dw.close()
 
     def load_all_dimensions(self) -> Dict[str, Tuple[int, int]]:
-        """
-        Carga todas las dimensiones en orden de dependencias
 
-        Returns:
-            Diccionario con el resultado de cada dimensión: {nombre: (extraidos, insertados)}
-        """
         results = {}
 
         logger.info("=" * 80)
         logger.info("INICIANDO CARGA DE DIMENSIONES")
         logger.info("=" * 80)
 
-        # PRIMERO: Limpiar todas las tablas (hechos y dimensiones)
         self.truncate_all_tables()
 
         logger.info("\n" + "=" * 80)
         logger.info("CARGANDO DATOS EN DIMENSIONES")
         logger.info("=" * 80 + "\n")
 
-        # Orden de carga (respetando dependencias)
         results["dim_tiempo"] = self.load_dim_tiempo()
         results["dim_geografia"] = self.load_dim_geografia()
         results["dim_producto"] = self.load_dim_producto()
@@ -134,7 +103,6 @@ class DimensionLoader:
         return results
 
     def load_dim_tiempo(self) -> Tuple[int, int]:
-        """Carga dimensión tiempo desde tabla tiempo en OLTP"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_TIEMPO", "dim_tiempo")
 
@@ -143,7 +111,6 @@ class DimensionLoader:
 
             cursor_dw = self.conn_dw.cursor()
 
-            # Extraer datos de OLTP
             query = """
                 SELECT
                     ID_FECHA,
@@ -177,7 +144,6 @@ class DimensionLoader:
                 etl_logger.finalizar_proceso(0, 0)
                 return (0, 0)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_tiempo (
@@ -206,7 +172,6 @@ class DimensionLoader:
             raise
 
     def load_dim_geografia(self) -> Tuple[int, int]:
-        """Carga dimensión geografía desde provincias, cantones y distritos"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_GEOGRAFIA", "dim_geografia")
 
@@ -215,7 +180,6 @@ class DimensionLoader:
 
             cursor_dw = self.conn_dw.cursor()
 
-            # Extraer datos de OLTP con JOIN
             query = """
                 SELECT DISTINCT
                     d.provincia_id,
@@ -233,7 +197,6 @@ class DimensionLoader:
             df = pd.read_sql(query, self.conn_oltp)
             registros_extraidos = len(df)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_geografia (
@@ -258,7 +221,6 @@ class DimensionLoader:
             raise
 
     def load_dim_producto(self) -> Tuple[int, int]:
-        """Carga dimensión producto desde productos y categorias"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_PRODUCTO", "dim_producto")
 
@@ -266,7 +228,6 @@ class DimensionLoader:
             logger.info("Cargando dim_producto...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer datos de OLTP
             query = """
                 SELECT
                     p.producto_id,
@@ -288,7 +249,6 @@ class DimensionLoader:
             df = pd.read_sql(query, self.conn_oltp)
             registros_extraidos = len(df)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_producto (
@@ -315,7 +275,6 @@ class DimensionLoader:
             raise
 
     def load_dim_cliente(self) -> Tuple[int, int]:
-        """Carga dimensión cliente desde clientes y geografía"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_CLIENTE", "dim_cliente")
 
@@ -323,7 +282,6 @@ class DimensionLoader:
             logger.info("Cargando dim_cliente...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer datos de OLTP
             query = """
                 SELECT
                     c.cliente_id,
@@ -358,12 +316,9 @@ class DimensionLoader:
             df = pd.read_sql(query, self.conn_oltp)
             registros_extraidos = len(df)
 
-            # Reemplazar NaT (Not a Time) con None para campos de fecha
             df['fecha_primer_compra'] = df['fecha_primer_compra'].where(pd.notna(df['fecha_primer_compra']), None)
             df['fecha_ultimo_compra'] = df['fecha_ultimo_compra'].where(pd.notna(df['fecha_ultimo_compra']), None)
 
-            # Insertar en DW usando executemany sin fast_executemany
-            # (fast_executemany tiene problemas con tipos de fecha mixtos)
             insert_sql = """
                 INSERT INTO dim_cliente (
                     cliente_id, nombre_cliente, apellido_cliente,
@@ -375,7 +330,6 @@ class DimensionLoader:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
-            # Insertar por lotes para mejor rendimiento
             batch_size = 1000
             total_inserted = 0
 
@@ -400,7 +354,6 @@ class DimensionLoader:
             raise
 
     def load_dim_almacen(self) -> Tuple[int, int]:
-        """Carga dimensión almacén desde almacenes"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_ALMACEN", "dim_almacen")
 
@@ -408,7 +361,7 @@ class DimensionLoader:
             logger.info("Cargando dim_almacen...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer datos de OLTP
+
             query = """
                 SELECT
                     almacen_id,
@@ -432,7 +385,6 @@ class DimensionLoader:
             df = pd.read_sql(query, self.conn_oltp)
             registros_extraidos = len(df)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_almacen (
@@ -459,16 +411,14 @@ class DimensionLoader:
             raise
 
     def load_dim_dispositivo(self) -> Tuple[int, int]:
-        """Carga dimensión dispositivo desde eventos_web (valores únicos)"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_DISPOSITIVO", "dim_dispositivo")
 
         try:
             logger.info("Cargando dim_dispositivo...")
 
-            # Limpiar tabla destino (debe resetearse el IDENTITY)
             cursor_dw = self.conn_dw.cursor()
-            # Extraer valores únicos de dispositivos de OLTP
+
             query = """
                 SELECT DISTINCT
                     UPPER(tipo_dispositivo) AS tipo_dispositivo,
@@ -491,7 +441,6 @@ class DimensionLoader:
             df = df.drop_duplicates()
             registros_extraidos = len(df)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_dispositivo (
@@ -515,7 +464,7 @@ class DimensionLoader:
             raise
 
     def load_dim_navegador(self) -> Tuple[int, int]:
-        """Carga dimensión navegador desde eventos_web y busquedas_web"""
+
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_NAVEGADOR", "dim_navegador")
 
@@ -523,7 +472,7 @@ class DimensionLoader:
             logger.info("Cargando dim_navegador...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer valores únicos de navegadores
+
             query = """
                 SELECT DISTINCT
                     UPPER(navegador) AS navegador
@@ -542,10 +491,8 @@ class DimensionLoader:
             df = df.drop_duplicates()
             registros_extraidos = len(df)
 
-            # Clasificar tipo de navegador (simplificado)
             df['tipo_navegador'] = 'Web'
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_navegador (navegador, tipo_navegador)
@@ -567,7 +514,6 @@ class DimensionLoader:
             raise
 
     def load_dim_tipo_evento(self) -> Tuple[int, int]:
-        """Carga dimensión tipo evento desde eventos_web"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_TIPO_EVENTO", "dim_tipo_evento")
 
@@ -575,7 +521,6 @@ class DimensionLoader:
             logger.info("Cargando dim_tipo_evento...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer valores únicos de tipo de evento
             query = """
                 SELECT DISTINCT
                     UPPER(tipo_evento) AS tipo_evento
@@ -587,7 +532,6 @@ class DimensionLoader:
             df = df.drop_duplicates()
             registros_extraidos = len(df)
 
-            # Clasificar categoría de evento y si es conversión
             df['categoria_evento'] = df['tipo_evento'].apply(
                 lambda x: 'Transacción' if 'VENTA' in x or 'COMPRA' in x
                 else 'Navegación'
@@ -597,7 +541,6 @@ class DimensionLoader:
                 lambda x: 1 if 'COMPLETADA' in x else 0
             )
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_tipo_evento (
@@ -621,7 +564,7 @@ class DimensionLoader:
             raise
 
     def load_dim_estado_venta(self) -> Tuple[int, int]:
-        """Carga dimensión estado venta desde ventas"""
+
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_ESTADO_VENTA", "dim_estado_venta")
 
@@ -629,7 +572,7 @@ class DimensionLoader:
             logger.info("Cargando dim_estado_venta...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer valores únicos de estado de venta
+
             query = """
                 SELECT DISTINCT
                     UPPER(estado_venta) AS estado_venta
@@ -641,13 +584,11 @@ class DimensionLoader:
             df = df.drop_duplicates()
             registros_extraidos = len(df)
 
-            # Clasificar si es exitosa
             df['descripcion'] = None
             df['es_exitosa'] = df['estado_venta'].apply(
                 lambda x: 0 if 'CANCELADA' in x or 'ANULADA' in x else 1
             )
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_estado_venta (
@@ -671,7 +612,6 @@ class DimensionLoader:
             raise
 
     def load_dim_metodo_pago(self) -> Tuple[int, int]:
-        """Carga dimensión método de pago desde ventas"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_METODO_PAGO", "dim_metodo_pago")
 
@@ -679,7 +619,7 @@ class DimensionLoader:
             logger.info("Cargando dim_metodo_pago...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer valores únicos de método de pago
+
             query = """
                 SELECT DISTINCT
                     UPPER(metodo_pago) AS metodo_pago
@@ -691,7 +631,6 @@ class DimensionLoader:
             df = df.drop_duplicates()
             registros_extraidos = len(df)
 
-            # Clasificar tipo de pago
             df['descripcion'] = None
             df['tipo_pago'] = df['metodo_pago'].apply(
                 lambda x: 'Tarjeta' if 'TARJETA' in x
@@ -699,7 +638,6 @@ class DimensionLoader:
                 else 'Digital'
             )
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_metodo_pago (
@@ -723,7 +661,6 @@ class DimensionLoader:
             raise
 
     def load_dim_sesion(self) -> Tuple[int, int]:
-        """Carga dimensión sesión desde eventos_web (valores únicos de sesiones)"""
         etl_logger = ETLLogger(self.conn_dw)
         etl_logger.iniciar_proceso("LOAD_DIM_SESION", "dim_sesion")
 
@@ -731,16 +668,13 @@ class DimensionLoader:
             logger.info("Cargando dim_sesion...")
 
             cursor_dw = self.conn_dw.cursor()
-            # Extraer datos únicos de sesiones desde eventos_web
-            # Seleccionar el primer evento de cada sesión para obtener la fecha/hora
+
             query = """
                 SELECT DISTINCT
                     evento_id,
                     codigo_sesion,
                     fecha_hora_evento
                 FROM eventos_web
-                WHERE codigo_sesion IS NOT NULL
-                    AND evento_id IS NOT NULL
             """
 
             df = pd.read_sql(query, self.conn_oltp)
@@ -751,7 +685,6 @@ class DimensionLoader:
                 etl_logger.finalizar_proceso(0, 0)
                 return (0, 0)
 
-            # Insertar en DW
             cursor_dw.fast_executemany = True
             insert_sql = """
                 INSERT INTO dim_sesion (

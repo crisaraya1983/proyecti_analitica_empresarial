@@ -1,14 +1,3 @@
-"""
-================================================================================
-CONFIGURACIÓN PARA ETL
-================================================================================
-Autor: Sistema de Analítica Empresarial
-Fecha: 2025-01-15
-Propósito: Configuración específica del ETL
-          (Las conexiones a BD ahora se manejan en utils.db_connection)
-================================================================================
-"""
-
 import sys
 import os
 
@@ -23,22 +12,14 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Importar desde el módulo global de conexiones
-from db_connection import (
+from utils.db_connection import (
     DatabaseConnection,
     get_oltp_connection,
     get_dw_connection,
     test_connections
 )
 
-# Alias para compatibilidad con código existente
 class DatabaseConfig:
-    """
-    Clase de compatibilidad que redirige a DatabaseConnection global
-
-    NOTA: Esta clase mantiene la compatibilidad con el código ETL existente.
-    Para nuevos desarrollos, usar directamente:
-        from utils.db_connection import DatabaseConnection
-    """
 
     @staticmethod
     def get_connection_string(database: str, use_secrets: bool = True) -> str:
@@ -59,7 +40,6 @@ class DatabaseConfig:
     @staticmethod
     def test_connections(use_secrets: bool = True) -> dict:
         results = DatabaseConnection.test_all_connections(use_secrets)
-        # Convertir formato para compatibilidad
         return {
             "oltp": {
                 "success": results["oltp"]["success"],
@@ -72,10 +52,8 @@ class DatabaseConfig:
         }
 
 
-# Configuración de bases de datos
 OLTP_DATABASE = DatabaseConnection.OLTP_DATABASE
 DW_DATABASE = DatabaseConnection.DW_DATABASE
 
-# Configuración de batch sizes para inserción ETL
 BATCH_SIZE_DIMENSIONS = 1000
 BATCH_SIZE_FACTS = 5000
