@@ -116,6 +116,8 @@ with tab1:
 
                 pipeline = ETLPipeline(use_secrets=True)
 
+                pipeline.results['inicio'] = datetime.now()
+
                 status_text.text("🔌 Conectando a bases de datos...")
                 progress_bar.progress(10)
                 pipeline.conectar_bases_datos()

@@ -347,7 +347,6 @@ GO
 CREATE TABLE fact_comportamiento_web (
     evento_web_key      BIGINT IDENTITY(1,1) PRIMARY KEY,
     tiempo_key          INT NOT NULL,
-    sesion_id           INT NOT NULL,
     cliente_id          INT,
     producto_id         INT,
     dispositivo_id      INT NOT NULL,
@@ -363,8 +362,6 @@ CREATE TABLE fact_comportamiento_web (
     fecha_carga         DATETIME DEFAULT GETDATE(),
     CONSTRAINT FK_fact_comp_web_tiempo
         FOREIGN KEY (tiempo_key) REFERENCES dim_tiempo(ID_FECHA),
-    CONSTRAINT FK_fact_comp_web_sesion
-        FOREIGN KEY (sesion_id) REFERENCES dim_sesion(sesion_id),
     CONSTRAINT FK_fact_comp_web_cliente
         FOREIGN KEY (cliente_id) REFERENCES dim_cliente(cliente_id),
     CONSTRAINT FK_fact_comp_web_producto
@@ -379,7 +376,6 @@ CREATE TABLE fact_comportamiento_web (
 
 -- Índices
 CREATE INDEX IX_fact_comp_web_tiempo ON fact_comportamiento_web(tiempo_key);
-CREATE INDEX IX_fact_comp_web_sesion ON fact_comportamiento_web(sesion_id);
 CREATE INDEX IX_fact_comp_web_cliente ON fact_comportamiento_web(cliente_id);
 CREATE INDEX IX_fact_comp_web_producto ON fact_comportamiento_web(producto_id);
 CREATE INDEX IX_fact_comp_web_dispositivo ON fact_comportamiento_web(dispositivo_id);
@@ -389,8 +385,6 @@ CREATE INDEX IX_fact_comp_web_evento_id ON fact_comportamiento_web(evento_id);
 CREATE INDEX IX_fact_comp_web_venta_id ON fact_comportamiento_web(venta_id);
 CREATE INDEX IX_fact_comp_web_conversion ON fact_comportamiento_web(genero_venta);
 
-CREATE INDEX IX_fact_comp_web_tiempo_sesion ON fact_comportamiento_web(tiempo_key, sesion_id);
-CREATE INDEX IX_fact_comp_web_sesion_cliente ON fact_comportamiento_web(sesion_id, cliente_id);
 CREATE INDEX IX_fact_comp_web_tiempo_dispositivo ON fact_comportamiento_web(tiempo_key, dispositivo_id);
 CREATE INDEX IX_fact_comp_web_tiempo_navegador ON fact_comportamiento_web(tiempo_key, navegador_id);
 CREATE INDEX IX_fact_comp_web_tiempo_tipo_evento ON fact_comportamiento_web(tiempo_key, tipo_evento_id);
