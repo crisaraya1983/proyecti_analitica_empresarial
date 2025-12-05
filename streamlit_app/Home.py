@@ -30,7 +30,11 @@ st.set_page_config(
 
 inicializar_componentes()
 
-st.title("Ecommerce Cenfotec Analytics")
+st.image(os.path.join(project_root, 'imagenes', 'Logo.png'), use_container_width=False, width=500)
+
+st.markdown("---")
+
+# st.title("Ecommerce Cenfotec Analytics")
 
 st.markdown("""
 <style>
